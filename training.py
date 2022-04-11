@@ -15,7 +15,9 @@ import pandas as pd
 import pickle
 
 from transformers import DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer, BertForTokenClassification, AutoTokenizer, get_scheduler
-from tqdm import tqdm
+from functools import partial
+from tqdm import tqdm as std_tqdm
+tqdm = partial(std_tqdm, leave=False, position=0, dynamic_ncols=True)
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
@@ -182,17 +184,13 @@ def run_experiment():
     return result_dict
 
 def main():  
-    x = {'test': 'cat'}
-    with open('model_out.pkl', 'wb') as f:
-        pickle.dump(x, f)
-    
     print("Device: ", device)
     results = run_experiment()
     # results = {'gpt2': {'tweebank': {'tweebank': 88.605, 'TPANN': 70.083, 'ark': 55.007}, 'TPANN': {'tweebank': 62.676, 'TPANN': 86.848, 'ark': 58.427}, 'ark': {'tweebank': 47.659, 'TPANN': 64.866, 'ark': 86.512}}, 'vinai/bertweet-large': {'tweebank': {'tweebank': 93.93, 'TPANN': 72.831, 'ark': 58.798}, 'TPANN': {'tweebank': 67.468, 'TPANN': 93.794, 'ark': 63.418}, 'ark': {'tweebank': 50.942, 'TPANN': 68.416, 'ark': 93.649}}, 'roberta-large': {'tweebank': {'tweebank': 92.997, 'TPANN': 71.411, 'ark': 57.999}, 'TPANN': {'tweebank': 71.133, 'TPANN': 92.837, 'ark': 63.047}, 'ark': {'tweebank': 52.045, 'TPANN': 67.397, 'ark': 92.689}}, 'bert-large-cased': {'tweebank': {'tweebank': 91.77, 'TPANN': 68.13, 'ark': 53.976}, 'TPANN': {'tweebank': 65.373, 'TPANN': 90.571, 'ark': 60.942}, 'ark': {'tweebank': 50.051, 'TPANN': 63.793, 'ark': 90.931}}}
     print(results)
     with open('model_out.pkl', 'wb') as f:
         pickle.dump(results, f)
-    
+
 
 if __name__ == '__main__':
     main()
