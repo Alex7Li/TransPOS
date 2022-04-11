@@ -1,0 +1,27 @@
+name: deep
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - torchvision
+  - cpuonly
+  - torchaudio
+  - pytorch
+  - numpy
+  - scipy
+  - autopep8
+  - pytorch-lightning
+  - kaggle=1.5.8
+  - ipykernel
+  - ipython_genutils
+  - ca-certificates
+  - certifi
+  - openssl
+  - matplotlib
+  - transformers
+  - tokenizers
+  - datasets
+  - seqeval
+  - conllu
+  - plotly
+  - seaborn
