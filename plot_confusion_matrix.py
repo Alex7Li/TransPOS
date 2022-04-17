@@ -42,7 +42,7 @@ def plot_confusion(confusion_matrix, dataset_names, given_title='title'):
     # add colorbar
     fig['data'][0]['showscale'] = True
     fig.write_image('./Results/' + given_title + '.png')
-    fig.show()
+    fig.savefig(str(given_title) + '_confusion.png')
 
 def main():
     with open('model_out.pkl', 'wb') as f:

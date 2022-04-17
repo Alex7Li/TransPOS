@@ -34,7 +34,7 @@ def plot_label_confusion(preds, labels, train_dataset_name, val_dataset_name):
                     columns = [train_name_map[invert_permutation(train_reorder)[p]] for p in range(n_pred_classes)])
     plt.figure(figsize = (n_pred_classes*3//4, n_label_classes*3//4))
     seaborn.heatmap(df_cm, annot=True, fmt='g')
-    plt.show('output.png')
+    plt.savefig('label_confusion.png')
 
 def get_model_predictions_and_true_labels(hparams, val_dataset_name):
     model = training_loop(hparams)
@@ -46,7 +46,7 @@ def get_model_predictions_and_true_labels(hparams, val_dataset_name):
 
 if __name__ == "__main__":
     preds_tpann, labels_tpann = get_model_predictions_and_true_labels({
-        'n_epochs': 3,
+        'n_epochs': 1,
         'batch_size': 8,
         'dataset': 'TPANN',
         'model_name': 'roberta-large',
