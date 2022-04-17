@@ -14,7 +14,7 @@ unzip [filename].zip
 You can try
 
 ```bash
-pip install -m requirements.txt
+pip install -r requirements.txt
 ```
 
 If it doesn't work just install what you need
@@ -22,7 +22,7 @@ If it doesn't work just install what you need
 ```bash
 pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 pip3 install numpy scipy plotly seaborn pandas
-pip3 install conluu
+pip3 install conllu
 ```
 
 (Maybe you need to install torch separately)
