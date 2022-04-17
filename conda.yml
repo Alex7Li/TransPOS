@@ -4,9 +4,7 @@ channels:
   - defaults
 dependencies:
   - torchvision
-  - cpuonly
   - torchaudio
-  - pytorch
   - numpy
   - scipy
   - autopep8

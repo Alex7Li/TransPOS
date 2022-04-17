@@ -61,4 +61,3 @@ def main():
 
     plot_confusion(matrix[-1], dataset_names, given_title=model_used.split('/')[-1])
     print()
-    
