@@ -130,7 +130,7 @@ def training_loop(hparams):
     val_accs = []
     if not os.path.exists('models'):
         os.mkdir('models')
-    best_model_path = os.path.join('models', hparams['model_name'] + "_" + hparams['dataset'])
+    best_model_path = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
     torch.save(model.state_dict(), best_model_path)
     best_val_acc = 0
     for i in tqdm(range(0, n_epochs)):
