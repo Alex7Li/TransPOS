@@ -1,7 +1,23 @@
+from typing import List
 import torch
 import torch.utils.data
+import numpy as np
 from conllu import parse_incr
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+# Atis doesn't actually use PUNCT, SCONJ, SYM, or X
+# It doesn't have SYM PUNCT, or X in the dataset originally
+# because the data is clean
+# and SCONJ is also super rare - a bertweet with 94% accuracy
+# detected only 32
+# # cases of it out of something like 50k tokens in the validation set.
+# But we use this extended set, since it's equivalent to tweebank.
+ATIS_POS_MAPPING = {
+  'ADJ': 0, 'ADP': 1, 'ADV': 2, 'AUX': 3, 'CCONJ': 4, 'DET': 5,
+  'INTJ': 6, 'NOUN': 7, 'NUM': 8, 'PART': 9, 'PRON': 10,
+  'PROPN': 11, 'PUNCT': 12, 'SCONJ': 13, 'SYM': 14, 'VERB': 15, 'X': 16
+}
 
 def data_reader(data_path):
     """  Some useful info     
@@ -21,13 +37,8 @@ def data_reader(data_path):
                 Y[-1].append(token['upos'])
     return X, Y
 
-twee_train_path = "TweeBankDataset/Tweebank-dev/en-ud-tweet-train.conllu"
-twee_dev_path = "TweeBankDataset/Tweebank-dev/en-ud-tweet-dev.conllu"
-twee_test_path = "TweeBankDataset/Tweebank-dev/en-ud-tweet-test.conllu"
-TWEEBANK_POS_MAPPING = {'ADJ': 0, 'ADP': 1, 'ADV': 2, 'AUX': 3, 'CCONJ': 4, 'DET': 5, 'INTJ': 6, 'NOUN': 7, 'NUM': 8, 'PART': 9, 'PRON': 10, 'PROPN': 11, 'PUNCT': 12, 'SCONJ': 13, 'SYM': 14, 'VERB': 15, 'X': 16}
-
 # Create Dataset Classes
-class TweebankTrain(torch.utils.data.Dataset):
+class AtisDataset(torch.utils.data.Dataset):
     def __init__(self, data_path): 
         self.X, self.Yraw = data_reader(data_path)
         self.Y = []
@@ -35,7 +46,7 @@ class TweebankTrain(torch.utils.data.Dataset):
         for ex in self.Yraw:
           self.Y.append([])
           for elem in ex:
-            self.Y[-1].append(TWEEBANK_POS_MAPPING[elem])
+            self.Y[-1].append(ATIS_POS_MAPPING[elem])
           
         assert(len(self.X) == len(self.Y))
 
@@ -47,9 +58,9 @@ class TweebankTrain(torch.utils.data.Dataset):
         Y = self.Y[ind]
         Y = torch.as_tensor(Y, dtype=torch.long, device=device) 
         return X, Y
-   
-def load_tweebank():
-    tweebank_train = TweebankTrain(twee_train_path)
-    tweebank_val = TweebankTrain(twee_dev_path)
-    tweebank_test = TweebankTrain(twee_test_path)
-    return tweebank_train, tweebank_val, tweebank_test
+
+def load_atis():
+    atis_train = AtisDataset("AtisDataset/en_atis-ud-train.conllu")
+    atis_val = AtisDataset("AtisDataset/en_atis-ud-train.conllu")
+    atis_test = AtisDataset("AtisDataset/en_atis-ud-train.conllu")
+    return atis_train, atis_val, atis_test

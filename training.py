@@ -28,11 +28,14 @@ from dataloading_utils import filter_negative_hundred, TransformerCompatDataset,
 from ArkDataset.load_ark import load_ark
 from TPANNDataset.load_tpann import load_tpann
 from TweeBankDataset.load_tweebank import load_tweebank
+from AtisDataset.load_atis import load_atis
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 ark_train, ark_val, ark_test = load_ark()
 tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
+atis_train, atis_val, atis_test = load_atis()
+
 model_names = [
     'gpt2',
     'vinai/bertweet-large',
@@ -40,9 +43,10 @@ model_names = [
     'bert-large-cased',
 ]
 dataset_names = [
+    'atis',
     'tweebank',
     'TPANN',
-    'ark'
+    #'ark',
 ]
 
 def train_epoch(model, train_dataloader, optimizer, scheduler):
@@ -87,6 +91,8 @@ def get_dataset(model_name, dataset_name, batch_size, partition):
             dataset = ark_train
         elif dataset_name == 'TPANN':
             dataset = tpann_train
+        elif dataset_name == "atis":
+            dataset = atis_train
         else:
             raise NotImplementedError
     elif partition == 'val':
@@ -96,6 +102,8 @@ def get_dataset(model_name, dataset_name, batch_size, partition):
             dataset = ark_val
         elif dataset_name == 'TPANN':
             dataset = tpann_val
+        elif dataset_name == "atis":
+            dataset = atis_val
         else:
             raise NotImplementedError
     elif partition == 'test':
@@ -105,6 +113,8 @@ def get_dataset(model_name, dataset_name, batch_size, partition):
             dataset = ark_test
         elif dataset_name == 'TPANN':
             dataset = tpann_test
+        elif dataset_name == "atis":
+            dataset = atis_test
         else:
             raise NotImplementedError
     else:
@@ -153,6 +163,7 @@ def training_loop(hparams):
         plt.show()
     model.load_state_dict(torch.load(best_model_path))  
     return model
+
 def run_experiment():
     result_dict = dict()
     for model_name in model_names:
@@ -165,7 +176,7 @@ def run_experiment():
 
             hparams = {
                 'n_epochs': 10,
-                'batch_size': 8,
+                'batch_size': 32,
                 'dataset': train_dataset_name,
                 'model_name': model_name
             }

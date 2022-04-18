@@ -28,13 +28,16 @@ def plot_label_confusion(preds, labels, train_dataset_name, val_dataset_name):
         for p in range(n_pred_classes):
             if val_to_unified[val_name_map[l]] != train_to_unified[train_name_map[p]]:
                 confusion_matrix[val_reorder[l]][train_reorder[p]] *= -1
-    assert(np.sum(confusion_matrix) > 0)  # Make sure the sorting is correct, we should have good accuracy
+    if(np.sum(confusion_matrix) < 0):
+        print("Uhh the accuracy is terrible, you probs have a bug")
     df_cm = pd.DataFrame(confusion_matrix,
                     index = [val_name_map[invert_permutation(val_reorder)[l]] for l in range(n_label_classes)],
                     columns = [train_name_map[invert_permutation(train_reorder)[p]] for p in range(n_pred_classes)])
     plt.figure(figsize = (n_pred_classes*3//4, n_label_classes*3//4))
-    seaborn.heatmap(df_cm, annot=True, fmt='g')
-    plt.savefig('label_confusion.png')
+    heatmap = seaborn.heatmap(df_cm, annot=True, fmt='g')
+    heatmap.set_xlabel(train_dataset_name)
+    heatmap.set_ylabel(val_dataset_name)
+    plt.savefig(f'label_confusion_train_{train_dataset_name}_val_{val_dataset_name}.png')
 
 def get_model_predictions_and_true_labels(hparams, val_dataset_name):
     model = training_loop(hparams)
@@ -45,11 +48,12 @@ def get_model_predictions_and_true_labels(hparams, val_dataset_name):
     return preds, labels
 
 if __name__ == "__main__":
-    preds_tpann, labels_tpann = get_model_predictions_and_true_labels({
-        'n_epochs': 1,
-        'batch_size': 8,
-        'dataset': 'TPANN',
-        'model_name': 'roberta-large',
-    }, 'tweebank')
+    preds_tpann, labels_tpann = get_model_predictions_and_true_labels(
+    {
+        'n_epochs': 3,
+        'batch_size': 32,
+        'dataset': 'tweebank',
+        'model_name': 'vinai/bertweet-large',
+    }, 'atis')
 
-    plot_label_confusion(preds_tpann, labels_tpann, 'TPANN', 'tweebank')
+    plot_label_confusion(preds_tpann, labels_tpann,  'tweebank', 'atis')

@@ -2,6 +2,7 @@ from typing import *
 import torch
 import torch.utils.data
 from TweeBankDataset.load_tweebank import TWEEBANK_POS_MAPPING
+from AtisDataset.load_atis import ATIS_POS_MAPPING
 
 PYTORCH_IGNORE_INDEX = -100 # Index ignored by pytorch https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html
 def create_pos_mapping(pos_tags: List[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
@@ -165,6 +166,11 @@ def get_dataset_mapping(dataset_name) -> Tuple[Dict[int, str], Dict[str, str]]:
         "$": "NUM", ",": "PUNCT", "G": "X", "L": "AUX", "M": "PROPN", "Y": "DET"
     }
     assert set(ARK_POS_TAGS) == set(dataset_to_twee_pos_mapping)
+  elif dataset_name == "atis":
+    pos_index_mapping = ATIS_POS_MAPPING
+    index_pos_mapping = {v:k for k, v in pos_index_mapping.items()}
+    dataset_to_twee_pos_mapping = {v:v for v in index_pos_mapping.values()}
+    assert set(ATIS_POS_MAPPING.keys()) == set(dataset_to_twee_pos_mapping)
   elif dataset_name == "tweebank":
     # all_pos is run from above as a global
     pos_index_mapping = TWEEBANK_POS_MAPPING

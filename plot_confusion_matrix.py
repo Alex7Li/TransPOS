@@ -45,7 +45,7 @@ def plot_confusion(confusion_matrix, dataset_names, given_title='title'):
     fig.savefig(str(given_title) + '_confusion.png')
 
 def main():
-    with open('model_out.pkl', 'wb') as f:
+    with open('model_out.pkl', 'rb') as f:
         results = pickle.load(f)
     #Make dictionary into needed list
     matrix = list()
@@ -60,4 +60,3 @@ def main():
                 matrix[-1][-1].append(acc)
 
     plot_confusion(matrix[-1], dataset_names, given_title=model_used.split('/')[-1])
-    print()
