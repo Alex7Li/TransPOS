@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from plotly.tools import FigureFactory as ff
 import pickle
 from training import dataset_names
@@ -9,7 +10,7 @@ def plot_confusion(confusion_matrix, dataset_names, given_title='title'):
     cf_matrix_list_str = matrix_to_str(confusion_matrix)
     # print(f"cf_matrix_list_str: {cf_matrix_list_str}")
     fig = ff.create_annotated_heatmap(confusion_matrix, x=dataset_names, y=dataset_names,
-        annotation_text=cf_matrix_list_str, autocolorscale=True, range_color=[.5,1])
+        annotation_text=cf_matrix_list_str, autocolorscale=True)
     #https://stackoverflow.com/questions/60860121/plotly-how-to-make-an-annotated-confusion-matrix-using-a-heatmap
     # add title
     fig.update_layout(title_text=("Model: " + given_title),
@@ -41,8 +42,10 @@ def plot_confusion(confusion_matrix, dataset_names, given_title='title'):
 
     # add colorbar
     fig['data'][0]['showscale'] = True
+    if not os.path.isdir("./Results"):
+        os.mkdir("./Results")
     fig.write_image('./Results/' + given_title + '.png')
-    fig.savefig(str(given_title) + '_confusion.png')
+    fig.write_image(str(given_title) + '_confusion.png')
 
 def main():
     with open('model_out.pkl', 'rb') as f:
@@ -51,6 +54,7 @@ def main():
     matrix = list()
     # model_names = ['bert-large-cased']
     # rows = ["tweebank", "TPANN", "ark"]
+    print(results.keys())
     for model_used in results.keys():
         matrix.append(list())
         for dataset_trained_on in results[model_used].keys():
@@ -59,4 +63,11 @@ def main():
                 # print(f"model_used: {model_used}, dataset_trained_on: {dataset_trained_on}, dataset_validated_on: {dataset_validated_on}, acc: {results[model_used][dataset_trained_on][dataset_validated_on]}%")
                 matrix[-1][-1].append(acc)
 
+<<<<<<< Updated upstream
     plot_confusion(matrix[-1], dataset_names, given_title=model_used.split('/')[-1])
+=======
+        plot_confusion(matrix[-1], dataset_names, given_title=model_used.split('/')[-1])
+
+if __name__ == "__main__":
+    main()
+>>>>>>> Stashed changes

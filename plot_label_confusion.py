@@ -13,6 +13,14 @@ def invert_permutation(perm):
 
 
 def plot_label_confusion(preds, labels, train_dataset_name, val_dataset_name):
+    """
+    Y-axis represents the labels of the validation dataset
+    X-axis represents the labels of the train dataset
+    The model predicts a label in the X-axis and this label is converted to the unified label
+    This converted unified label is compared to the actual unified label from Tweebank.
+    If they are different, then the cell is negative, otherwise the cell is positive.
+    The Y-axis indicates what the unified label was supposed to be
+    """
     n_label_classes = np.max(labels) + 1
     n_pred_classes = np.max(preds) + 1
     train_name_map, train_to_unified  = get_dataset_mapping(train_dataset_name)
@@ -48,12 +56,11 @@ def get_model_predictions_and_true_labels(hparams, val_dataset_name):
     return preds, labels
 
 if __name__ == "__main__":
-    preds_tpann, labels_tpann = get_model_predictions_and_true_labels(
-    {
+    preds_tpann, labels_tpann = get_model_predictions_and_true_labels({
         'n_epochs': 3,
-        'batch_size': 32,
-        'dataset': 'tweebank',
-        'model_name': 'vinai/bertweet-large',
-    }, 'atis')
+        'batch_size': 8,
+        'dataset': 'TPANN',
+        'model_name': 'roberta-large',
+    }, 'tweebank')
 
-    plot_label_confusion(preds_tpann, labels_tpann,  'tweebank', 'atis')
+    plot_label_confusion(preds_tpann, labels_tpann, 'TPANN', 'tweebank')

@@ -175,7 +175,7 @@ def run_experiment():
             result_dict[model_name][train_dataset_name] = dict()
 
             hparams = {
-                'n_epochs': 10,
+                'n_epochs': 4,
                 'batch_size': 32,
                 'dataset': train_dataset_name,
                 'model_name': model_name
