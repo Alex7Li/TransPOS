@@ -78,12 +78,17 @@ def validation_epoch(model, val_dataloader):
         labels.append(batch_labels)
     return filter_negative_hundred(preds, labels)
 
-def get_dataset(model_name, dataset_name, batch_size, partition):
-    assert partition in {'train', 'val', 'test'}
+def get_dataloader(model_name, dataset, batch_size, shuffle=False):
     tokenizer = AutoTokenizer.from_pretrained(model_name, add_prefix_space=True, use_fast=True)
     if model_name == 'gpt2':
         tokenizer.pad_token = tokenizer.eos_token
     data_collator = DataCollatorForTokenClassification(tokenizer)
+    compat_dataset = TransformerCompatDataset(dataset, tokenizer)
+    dataloader = DataLoader(compat_dataset, shuffle=shuffle, batch_size=batch_size, collate_fn=data_collator)
+    return dataloader
+
+def get_dataset(dataset_name, partition):
+    assert partition in {'train', 'val', 'test'}
     if partition == 'train':
         if dataset_name == 'tweebank':
             dataset = tweebank_train
@@ -119,19 +124,13 @@ def get_dataset(model_name, dataset_name, batch_size, partition):
             raise NotImplementedError
     else:
         raise NotImplementedError
-    dataloader = DataLoader(TransformerCompatDataset(dataset, tokenizer), shuffle=False, batch_size=batch_size, collate_fn=data_collator)
-    return dataloader, dataset.num_labels
+    return dataset
 
 def load_model(model_name, num_labels):
     model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
     return model.to(device)
 
-def training_loop(hparams):
-    torch.cuda.empty_cache()
-    train_dataloader, num_labels = get_dataset(hparams['model_name'], hparams['dataset'], hparams['batch_size'], 'train')
-    val_dataloader, _ = get_dataset(hparams['model_name'], hparams['dataset'], hparams['batch_size'], 'val')
-    n_epochs = hparams['n_epochs']
-    model = load_model(hparams['model_name'], num_labels)
+def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
     optimizer = AdamW(model.parameters(), lr=5e-5)
 
     lr_scheduler = get_scheduler(
@@ -140,29 +139,39 @@ def training_loop(hparams):
     val_accs = []
     if not os.path.exists('models'):
         os.mkdir('models')
-    best_model_path = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
-    torch.save(model.state_dict(), best_model_path)
+    torch.save(model.state_dict(), save_path)
     best_val_acc = 0
     for i in tqdm(range(0, n_epochs)):
         train_epoch(model, train_dataloader, optimizer, lr_scheduler)
     
         preds, labels = validation_epoch(model, val_dataloader)
-        val_acc = get_validation_acc(preds, labels,  hparams["dataset"], hparams['dataset'])
+        val_acc = get_validation_acc(preds, labels, dataset_name, dataset_name)
         val_accs.append(val_acc)
         if val_acc > best_val_acc:
-            torch.save(model.state_dict(), best_model_path)
+            torch.save(model.state_dict(), save_path)
         print(f"Val Accuracy Train epoch {i+1}: {round(100*val_acc,3)}%")
         
-    if hparams['n_epochs'] > 1:
+    if n_epochs > 1:
         # Make ranadeep happy
         plt.xlabel('epoch')
         plt.ylabel('accuracy')
         plt.ylim([.4, 1])
-        plt.title(f"Training curve for: {hparams['model_name']}")
+        plt.title(f"Training curve for model at {save_path}")
         plt.plot(range(n_epochs), val_accs)
         plt.show()
-    model.load_state_dict(torch.load(best_model_path))  
+    model.load_state_dict(torch.load(save_path))  
     return model
+def pipeline(hparams):
+    torch.cuda.empty_cache()
+    train_dataset = get_dataset(hparams['dataset'], 'train')
+    train_dataloader = get_dataloader(hparams['model_name'], train_dataset, hparams['batch_size'])
+    val_dataset = get_dataset(hparams['dataset'], 'val')
+    val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
+    num_labels = train_dataset.num_labels
+    n_epochs = hparams['n_epochs']
+    model = load_model(hparams['model_name'], num_labels)
+    return training_loop(model, train_dataloader, val_dataloader, hparams['dataset'], n_epochs, hparams['save_path'])
+
 
 def run_experiment():
     result_dict = dict()
@@ -178,15 +187,17 @@ def run_experiment():
                 'n_epochs': 4,
                 'batch_size': 32,
                 'dataset': train_dataset_name,
-                'model_name': model_name
+                'model_name': model_name,
             }
+            hparams['save_path'] = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
 
             print(f"Training on: {train_dataset_name}, with model: {model_name}")
-            trained_model = training_loop(hparams)
+            trained_model = pipeline(hparams)
             
             for test_dataset_name in dataset_names:
                 print(f"Validating: {test_dataset_name}, with model: {model_name}, trained on: {train_dataset_name}")
-                val_dataloader, _ = get_dataset(model_name, test_dataset_name, hparams['batch_size'], 'test')
+                val_dataset = get_dataset(hparams['dataset'], 'val')
+                val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
                 preds, labels = validation_epoch(trained_model, val_dataloader)
                 acc = get_validation_acc(preds, labels,  train_dataset_name, test_dataset_name)
                 print(f"Test Accuracy on {test_dataset_name}: {round(100*acc,3)}%")
