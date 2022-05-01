@@ -45,7 +45,7 @@ model_names = [
 ]
 dataset_names = [
     'TPANN',
-    #'GUM',
+    'GUM',
     'tweebank',
     #'ark',
     #'atis',
@@ -191,7 +191,7 @@ def run_experiment():
             result_dict[model_name][train_dataset_name] = dict()
 
             hparams = {
-                'n_epochs': 4,
+                'n_epochs': 10,
                 'batch_size': 32,
                 'dataset': train_dataset_name,
                 'model_name': model_name,
@@ -205,7 +205,7 @@ def run_experiment():
             
             for test_dataset_name in dataset_names:
                 print(f"Validating: {test_dataset_name}, with model: {model_name}, trained on: {train_dataset_name}")
-                val_dataset = get_dataset(hparams['dataset'], 'val')
+                val_dataset = get_dataset(test_dataset_name, 'val')
                 val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
                 preds, labels = validation_epoch(trained_model, val_dataloader)
                 acc = get_validation_acc(preds, labels,  train_dataset_name, test_dataset_name)
