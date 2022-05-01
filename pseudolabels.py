@@ -19,7 +19,7 @@ import torch
 from tqdm import tqdm
 import pickle
 import torch.utils.data
-from torch.optim import AdamW
+from torch.optim import AdamW   
 from transformers import AutoTokenizer
 
 batch_size = 8
@@ -125,7 +125,7 @@ def train_on_psuedolabels(model_name, pseudolabel_path, base_dataset_name, save_
   val_dataset = training.get_dataset(base_dataset_name, 'val')
   val_dataloader = training.get_dataloader(model_name, val_dataset, batch_size, shuffle=False)
   model = training.load_model(model_name, dataset1.num_labels)
-  n_epochs = 4
+  n_epochs = 1
   training.training_loop(model, train_dataloader, val_dataloader, base_dataset_name, n_epochs, save_path)
   return save_path
 
