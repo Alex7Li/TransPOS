@@ -29,6 +29,9 @@ from TPANNDataset.load_tpann import load_tpann
 from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
+nltk.download('wordnet')
+from nltk.corpus import wordnet as wn
+import spacy
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 ark_train, ark_val, ark_test = load_ark()
@@ -133,6 +136,60 @@ def get_dataset(dataset_name, partition):
     else:
         raise NotImplementedError
     return dataset
+
+def get_augmented_dataset(train_X,train_Y):
+  augmented_examples = []
+  augmented_labels = []
+  augment_percent = .1
+  for i,sentence in enumerate(train_X):
+    break1 = False
+    breaktonextword = False
+    break2 = False
+    break3 = False
+    augmented = False
+    ex = sentence.copy()
+    num_words_to_augment = max(1,int(augment_percent*(len(sentence))))
+    for j,word in enumerate(sentence):
+      if train_Y[i][j] in ["V","N","A"]:
+        for s,synset in enumerate(wn.synsets(train_X[i][j])):
+          if s==0:
+            continue
+          if synset.pos() == train_Y[i][j].lower():
+            for lemma in synset.lemmas():
+              ex[j] = lemma.name()
+              num_words_to_augment-=1
+              if num_words_to_augment ==0:
+                augmented_examples.append(ex)
+                augmented_labels.append(train_Y[i])
+                break1 = True
+                augmented = True
+                break
+              elif j==(len(sentence)-1):
+                augmented_examples.append(ex)
+                augmented_labels.append(train_Y[i])
+                augmented = True
+                break1 = True
+                break
+              elif num_words_to_augment>0:
+                breaktonextword = True
+                break
+          if breaktonextword:
+            breaktonextword = False
+            break
+          if break1:
+            break1 = False
+            break2 = True
+            break
+        if break2:
+          break2 = False
+          break
+      else:
+        if augmented:
+          augmented_examples.append(ex)
+          augmented_labels.append(train_Y[i])
+          augmented = False
+          break
+  return augmented_examples, augmented_labels    
 
 def load_model(model_name, num_labels):
     model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
