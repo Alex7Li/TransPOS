@@ -76,7 +76,7 @@ def get_x_and_pseudolabels(model, dataset, model_name):
     inputs = []
     pseudolabels = []
     offset = 0
-    for batch in tqdm(dataloader):
+    for batch in tqdm(dataloader, desc='generating psuedolabels'):
       batch = {k: v.to(device) for k, v in batch.items()}
       del batch['labels']
       with torch.no_grad():

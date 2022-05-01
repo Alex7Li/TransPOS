@@ -29,14 +29,12 @@ from ArkDataset.load_ark import load_ark
 from TPANNDataset.load_tpann import load_tpann
 from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
-from GUMDataset.load_GUM import load_gum
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 ark_train, ark_val, ark_test = load_ark()
 tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 atis_train, atis_val, atis_test = load_atis()
-gum_train, gum_val, gum_test = load_gum()
 
 model_names = [
     'gpt2',
@@ -45,16 +43,15 @@ model_names = [
     'bert-large-cased',
 ]
 dataset_names = [
-    'GUM',
+    'atis',
     'tweebank',
     'TPANN',
     #'ark',
-    #'atis',
 ]
 
 def train_epoch(model, train_dataloader, optimizer, scheduler):
     model.train()
-    for batch in tqdm(train_dataloader):
+    for batch in tqdm(train_dataloader, desc='training'):
         batch = {k: v.to(device) for k, v in batch.items()}
         outputs = model(**batch)
         loss = outputs.loss
@@ -68,7 +65,7 @@ def validation_epoch(model, val_dataloader):
     model.eval()
     preds = []
     labels = []
-    for batch in tqdm(val_dataloader):
+    for batch in tqdm(val_dataloader, desc='validation'):
         batch = {k: v.to(device) for k, v in batch.items()}
         batch_labels = batch['labels']
         del batch['labels']
@@ -81,17 +78,12 @@ def validation_epoch(model, val_dataloader):
         labels.append(batch_labels)
     return filter_negative_hundred(preds, labels)
 
-def get_dataloader(model_name, dataset, batch_size, shuffle=False):
+def get_dataset(model_name, dataset_name, batch_size, partition):
+    assert partition in {'train', 'val', 'test'}
     tokenizer = AutoTokenizer.from_pretrained(model_name, add_prefix_space=True, use_fast=True)
     if model_name == 'gpt2':
         tokenizer.pad_token = tokenizer.eos_token
     data_collator = DataCollatorForTokenClassification(tokenizer)
-    compat_dataset = TransformerCompatDataset(dataset, tokenizer)
-    dataloader = DataLoader(compat_dataset, shuffle=shuffle, batch_size=batch_size, collate_fn=data_collator)
-    return dataloader
-
-def get_dataset(dataset_name, partition):
-    assert partition in {'train', 'val', 'test'}
     if partition == 'train':
         if dataset_name == 'tweebank':
             dataset = tweebank_train
@@ -101,8 +93,6 @@ def get_dataset(dataset_name, partition):
             dataset = tpann_train
         elif dataset_name == "atis":
             dataset = atis_train
-        elif dataset_name == "GUM":
-            dataset = gum_train
         else:
             raise NotImplementedError
     elif partition == 'val':
@@ -114,8 +104,6 @@ def get_dataset(dataset_name, partition):
             dataset = tpann_val
         elif dataset_name == "atis":
             dataset = atis_val
-        elif dataset_name == "GUM":
-            dataset = gum_val
         else:
             raise NotImplementedError
     elif partition == 'test':
@@ -127,58 +115,54 @@ def get_dataset(dataset_name, partition):
             dataset = tpann_test
         elif dataset_name == "atis":
             dataset = atis_test
-        elif dataset_name == "GUM":
-            dataset = gum_test
         else:
             raise NotImplementedError
     else:
         raise NotImplementedError
-    return dataset
+    dataloader = DataLoader(TransformerCompatDataset(dataset, tokenizer), shuffle=False, batch_size=batch_size, collate_fn=data_collator)
+    return dataloader, dataset.num_labels
 
 def load_model(model_name, num_labels):
     model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
     return model.to(device)
 
-def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
+def training_loop(hparams):
+    torch.cuda.empty_cache()
+    train_dataloader, num_labels = get_dataset(hparams['model_name'], hparams['dataset'], hparams['batch_size'], 'train')
+    val_dataloader, _ = get_dataset(hparams['model_name'], hparams['dataset'], hparams['batch_size'], 'val')
+    n_epochs = hparams['n_epochs']
+    model = load_model(hparams['model_name'], num_labels)
     optimizer = AdamW(model.parameters(), lr=5e-5)
 
     lr_scheduler = get_scheduler(
         name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
     )
     val_accs = []
-    torch.save(model.state_dict(), save_path)
+    if not os.path.exists('models'):
+        os.mkdir('models')
+    best_model_path = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
+    torch.save(model.state_dict(), best_model_path)
     best_val_acc = 0
     for i in tqdm(range(0, n_epochs)):
         train_epoch(model, train_dataloader, optimizer, lr_scheduler)
     
         preds, labels = validation_epoch(model, val_dataloader)
-        val_acc = get_validation_acc(preds, labels, dataset_name, dataset_name)
+        val_acc = get_validation_acc(preds, labels,  hparams["dataset"], hparams['dataset'])
         val_accs.append(val_acc)
         if val_acc > best_val_acc:
-            torch.save(model.state_dict(), save_path)
+            torch.save(model.state_dict(), best_model_path)
         print(f"Val Accuracy Train epoch {i+1}: {round(100*val_acc,3)}%")
         
-    if n_epochs > 1:
+    if hparams['n_epochs'] > 1:
         # Make ranadeep happy
         plt.xlabel('epoch')
         plt.ylabel('accuracy')
         plt.ylim([.4, 1])
-        plt.title(f"Training curve for model at {save_path}")
+        plt.title(f"Training curve for: {hparams['model_name']}")
         plt.plot(range(n_epochs), val_accs)
         plt.show()
-    model.load_state_dict(torch.load(save_path))  
+    model.load_state_dict(torch.load(best_model_path))  
     return model
-def pipeline(hparams):
-    torch.cuda.empty_cache()
-    train_dataset = get_dataset(hparams['dataset'], 'train')
-    train_dataloader = get_dataloader(hparams['model_name'], train_dataset, hparams['batch_size'])
-    val_dataset = get_dataset(hparams['dataset'], 'val')
-    val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
-    num_labels = train_dataset.num_labels
-    n_epochs = hparams['n_epochs']
-    model = load_model(hparams['model_name'], num_labels)
-    return training_loop(model, train_dataloader, val_dataloader, hparams['dataset'], n_epochs, hparams['save_path'])
-
 
 def run_experiment():
     result_dict = dict()
@@ -194,23 +178,19 @@ def run_experiment():
                 'n_epochs': 4,
                 'batch_size': 32,
                 'dataset': train_dataset_name,
-                'model_name': model_name,
+                'model_name': model_name
             }
-            if not os.path.exists('models'):
-                os.mkdir('models')
-            hparams['save_path'] = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
 
             print(f"Training on: {train_dataset_name}, with model: {model_name}")
-            trained_model = pipeline(hparams)
+            trained_model = training_loop(hparams)
             
             for test_dataset_name in dataset_names:
                 print(f"Validating: {test_dataset_name}, with model: {model_name}, trained on: {train_dataset_name}")
-                val_dataset = get_dataset(hparams['dataset'], 'val')
-                val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
+                val_dataloader, _ = get_dataset(model_name, test_dataset_name, hparams['batch_size'], 'test')
                 preds, labels = validation_epoch(trained_model, val_dataloader)
                 acc = get_validation_acc(preds, labels,  train_dataset_name, test_dataset_name)
                 print(f"Test Accuracy on {test_dataset_name}: {round(100*acc,3)}%")
-                result_dict[model_name][train_dataset_name][test_dataset_name] = 100*acc
+                result_dict[model_name][train_dataset_name][test_dataset_name] = round(100*acc,3)
 
     return result_dict
 
