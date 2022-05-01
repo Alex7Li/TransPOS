@@ -91,7 +91,7 @@ def get_x_and_pseudolabels(model, dataset, model_name):
   
       predictions = predictions.detach().cpu().numpy()
       confidence = confidence.detach().cpu().numpy()
-      for i in range(len(batch)):
+      for i in range(batch['input_ids'].shape[0]):
         x, _ = dataset[i + offset]
         tokenized_inputs = tokenizer(x, truncation=True, is_split_into_words=True)
         word_ids = tokenized_inputs.word_ids()
