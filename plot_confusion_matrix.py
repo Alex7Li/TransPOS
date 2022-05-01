@@ -47,9 +47,7 @@ def plot_confusion(confusion_matrix, dataset_names, given_title='title'):
     fig.write_image('./Results/' + given_title + '.png')
     fig.write_image(str(given_title) + '_confusion.png')
 
-def main():
-    with open('model_out.pkl', 'rb') as f:
-        results = pickle.load(f)
+def main(results):
     #Make dictionary into needed list
     matrix = list()
     # model_names = ['bert-large-cased']
@@ -66,4 +64,8 @@ def main():
         plot_confusion(matrix[-1], dataset_names, given_title=model_used.split('/')[-1])
 
 if __name__ == "__main__":
-    main()
+    # in_path = 'model_out.pkl'
+    in_path = 'psuedolabel_out.pkl'
+    with open(in_path, 'rb') as f:
+        results = pickle.load(f)
+    main(results)

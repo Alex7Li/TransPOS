@@ -21,6 +21,7 @@ import pickle
 import torch.utils.data
 from torch.optim import AdamW   
 from transformers import AutoTokenizer
+from dataloading_utils import get_validation_acc
 
 batch_size = 8
 class PseudoDataset(torch.utils.data.Dataset):
@@ -83,7 +84,7 @@ def get_x_and_pseudolabels(model, dataset, model_name):
           outputs = model(**batch)
   
       predictions = torch.argmax(outputs.logits, dim=-1)
-      probabilities = torch.exp(outputs.logits)
+      probabilities = torch.nn.Softmax(dim=2)(outputs.logits)
       confidence = torch.zeros_like(predictions, dtype=torch.float)
       for element_ind in range(predictions.shape[0]):
         for seq_ind in range(predictions.shape[1]):
@@ -135,43 +136,52 @@ def validate_student(model_name, trained_student_path, train_dataset_name, train
     val_dataset = training.get_dataset(val_dataset_name, 'test')
     val_dataloader = training.get_dataloader(model_name, val_dataset, batch_size, shuffle=False)
     preds, labels = training.validation_epoch(student, val_dataloader)
-    test_acc = training.get_validation_acc(preds, labels, train_dataset_name, val_dataset_name)
+    test_acc = get_validation_acc(preds, labels, train_dataset_name, val_dataset_name)
     return test_acc
 
 def run_pseudolabel_experiment():
   teacher_model_name = 'bert-large-cased'
   student_model_name = 'bert-large-cased'
-  supervised_dataset_n_labels = 17
   result_dict = dict()
   result_dict[student_model_name] = dict()
   for supervised_dataset_name in training.dataset_names:
-    teacher_model_path = os.path.join('models', "teacher_" + str(teacher_model_name.split('/')[-1]) + "_" + supervised_dataset_name + ".npz")
+    result_dict[student_model_name][supervised_dataset_name] = dict()
+
+  for supervised_dataset_name in training.dataset_names:
+    teacher_model_path = os.path.join('models', "teacher_" + str(teacher_model_name.split('/')[-1]) + "_" + supervised_dataset_name)
+    supervised_dataset_n_labels = training.get_dataset(supervised_dataset_name, 'train').num_labels
+
 
     if not os.path.exists(teacher_model_path):
       train_teacher(teacher_model_name, supervised_dataset_name, teacher_model_path)
       print(f"Done training. Saved to {teacher_model_path}")
-
+    else:
+      print("teach model path exists")
+  
     for unsupervised_dataset_name in training.dataset_names:
-      result_dict[student_model_name][unsupervised_dataset_name] = dict()
-      pseudolabel_path = os.path.join('pseudolabels', str(teacher_model_name.split('/')[-1]) + "_" + supervised_dataset_name + "_" + unsupervised_dataset_name + ".npz")
-      student_model_path = os.path.join('models', "student_" + str(student_model_name.split('/')[-1]) + "_" + supervised_dataset_name + "_" + unsupervised_dataset_name + ".npz")
-      if not os.path.exists(pseudolabel_path):
-        generate_pseudo_labels(teacher_model_path, teacher_model_name,\
-          supervised_dataset_n_labels, unsupervised_dataset_name, pseudolabel_path)
-        print(f"Generated Pseudolabels. Saved to {pseudolabel_path}")
+      if unsupervised_dataset_name != supervised_dataset_name:
+        pseudolabel_path = os.path.join('pseudolabels', str(teacher_model_name.split('/')[-1]) + "_" + supervised_dataset_name + "_" + unsupervised_dataset_name + ".npz")
+        student_model_path = os.path.join('models', "student_" + str(student_model_name.split('/')[-1]) + "_" + supervised_dataset_name + "_" + unsupervised_dataset_name + ".npz")
+        if not os.path.exists(pseudolabel_path) and not os.path.exists(student_model_path):
+          generate_pseudo_labels(teacher_model_path, teacher_model_name,\
+            supervised_dataset_n_labels, unsupervised_dataset_name, pseudolabel_path)
+          print(f"Generated Pseudolabels. Saved to {pseudolabel_path}")
 
-      if not os.path.exists(student_model_path):
-        train_on_psuedolabels(student_model_name, pseudolabel_path, supervised_dataset_name, student_model_path)
-        print(f"Student has been trained, saved to {student_model_path}")
+        if not os.path.exists(student_model_path):
+          train_on_psuedolabels(student_model_name, pseudolabel_path, supervised_dataset_name, student_model_path)
+          print(f"Student has been trained, saved to {student_model_path}")
 
-      test_acc = validate_student(student_model_name, student_model_path,\
-          supervised_dataset_name, supervised_dataset_n_labels, unsupervised_dataset_name)
+        test_acc = validate_student(student_model_name, student_model_path,\
+            supervised_dataset_name, supervised_dataset_n_labels, unsupervised_dataset_name)
+        # I'm running out of disk space O:
+        os.remove(pseudolabel_path)
+      else:
+        test_acc = validate_student(student_model_name, teacher_model_path,\
+            supervised_dataset_name, supervised_dataset_n_labels, unsupervised_dataset_name)
       print(f"{student_model_name} trained with teacher {teacher_model_name} on {supervised_dataset_name}"
             f"has accuracy {test_acc * 100:.2f}% on {unsupervised_dataset_name}")
       result_dict[student_model_name][supervised_dataset_name][unsupervised_dataset_name] = 100 * test_acc
 
-      # I'm running out of disk space O:
-      os.remove(pseudolabel_path)
   return result_dict
 
 def main():
