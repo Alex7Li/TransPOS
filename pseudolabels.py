@@ -60,7 +60,7 @@ class MergedDataset(torch.utils.data.Dataset):
 
 def train_teacher(model_name, dataset_name, save_path):
   hparams = {
-      'n_epochs': 4,
+      'n_epochs': 1,
       'batch_size': batch_size,
       'dataset': dataset_name,
       'model_name': model_name,
