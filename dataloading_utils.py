@@ -40,17 +40,18 @@ def tokenize_and_align_labels(orig_x, orig_labels, tokenizer):
     tokenized_inputs = tokenizer(orig_x, truncation=True, is_split_into_words=True)
 
     word_ids = tokenized_inputs.word_ids()
-    previous_word_idx = None
     label_ids = []
+    prev_word_idx = -1
     for word_idx in word_ids:
         # Special tokens have a word id that is None. We set the label to -100 so they are automatically
         # ignored in the loss function.
         if word_idx is None:
             label_ids.append(PYTORCH_IGNORE_INDEX) 
+        elif prev_word_idx == word_idx:
+            label_ids.append(PYTORCH_IGNORE_INDEX) 
         # We set the label for the first token of each word.
         else:
             label_ids.append(orig_labels[word_idx])
-        previous_word_idx = word_idx
     tokenized_inputs['labels'] = label_ids
     return tokenized_inputs
 
@@ -166,12 +167,7 @@ def get_dataset_mapping(dataset_name) -> Tuple[Dict[int, str], Dict[str, str]]:
         "$": "NUM", ",": "PUNCT", "G": "X", "L": "AUX", "M": "PROPN", "Y": "DET"
     }
     assert set(ARK_POS_TAGS) == set(dataset_to_twee_pos_mapping)
-  elif dataset_name == "atis":
-    pos_index_mapping = ATIS_POS_MAPPING
-    index_pos_mapping = {v:k for k, v in pos_index_mapping.items()}
-    dataset_to_twee_pos_mapping = {v:v for v in index_pos_mapping.values()}
-    assert set(ATIS_POS_MAPPING.keys()) == set(dataset_to_twee_pos_mapping)
-  elif dataset_name == "tweebank":
+  elif dataset_name == "atis" or dataset_name == 'GUM' or dataset_name == "tweebank":
     # all_pos is run from above as a global
     pos_index_mapping = TWEEBANK_POS_MAPPING
     index_pos_mapping = {v:k for k, v in pos_index_mapping.items()}

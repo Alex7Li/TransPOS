@@ -29,12 +29,14 @@ from ArkDataset.load_ark import load_ark
 from TPANNDataset.load_tpann import load_tpann
 from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
+from GUMDataset.load_GUM import load_gum
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 ark_train, ark_val, ark_test = load_ark()
 tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 atis_train, atis_val, atis_test = load_atis()
+gum_train, gum_val, gum_test = load_gum()
 
 model_names = [
     'gpt2',
@@ -43,10 +45,11 @@ model_names = [
     'bert-large-cased',
 ]
 dataset_names = [
-    'atis',
+    'GUM',
     'tweebank',
     'TPANN',
     #'ark',
+    #'atis',
 ]
 
 def train_epoch(model, train_dataloader, optimizer, scheduler):
@@ -98,6 +101,8 @@ def get_dataset(dataset_name, partition):
             dataset = tpann_train
         elif dataset_name == "atis":
             dataset = atis_train
+        elif dataset_name == "GUM":
+            dataset = gum_train
         else:
             raise NotImplementedError
     elif partition == 'val':
@@ -109,6 +114,8 @@ def get_dataset(dataset_name, partition):
             dataset = tpann_val
         elif dataset_name == "atis":
             dataset = atis_val
+        elif dataset_name == "GUM":
+            dataset = gum_val
         else:
             raise NotImplementedError
     elif partition == 'test':
@@ -120,6 +127,8 @@ def get_dataset(dataset_name, partition):
             dataset = tpann_test
         elif dataset_name == "atis":
             dataset = atis_test
+        elif dataset_name == "GUM":
+            dataset = gum_test
         else:
             raise NotImplementedError
     else:
@@ -137,8 +146,6 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
         name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
     )
     val_accs = []
-    if not os.path.exists('models'):
-        os.mkdir('models')
     torch.save(model.state_dict(), save_path)
     best_val_acc = 0
     for i in tqdm(range(0, n_epochs)):
@@ -189,6 +196,8 @@ def run_experiment():
                 'dataset': train_dataset_name,
                 'model_name': model_name,
             }
+            if not os.path.exists('models'):
+                os.mkdir('models')
             hparams['save_path'] = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
 
             print(f"Training on: {train_dataset_name}, with model: {model_name}")
@@ -201,7 +210,7 @@ def run_experiment():
                 preds, labels = validation_epoch(trained_model, val_dataloader)
                 acc = get_validation_acc(preds, labels,  train_dataset_name, test_dataset_name)
                 print(f"Test Accuracy on {test_dataset_name}: {round(100*acc,3)}%")
-                result_dict[model_name][train_dataset_name][test_dataset_name] = round(100*acc,3)
+                result_dict[model_name][train_dataset_name][test_dataset_name] = 100*acc
 
     return result_dict
 

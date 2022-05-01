@@ -63,11 +63,7 @@ def main():
                 # print(f"model_used: {model_used}, dataset_trained_on: {dataset_trained_on}, dataset_validated_on: {dataset_validated_on}, acc: {results[model_used][dataset_trained_on][dataset_validated_on]}%")
                 matrix[-1][-1].append(acc)
 
-<<<<<<< Updated upstream
-    plot_confusion(matrix[-1], dataset_names, given_title=model_used.split('/')[-1])
-=======
         plot_confusion(matrix[-1], dataset_names, given_title=model_used.split('/')[-1])
 
 if __name__ == "__main__":
     main()
->>>>>>> Stashed changes

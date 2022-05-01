@@ -61,6 +61,6 @@ class AtisDataset(torch.utils.data.Dataset):
 
 def load_atis():
     atis_train = AtisDataset("AtisDataset/en_atis-ud-train.conllu")
-    atis_val = AtisDataset("AtisDataset/en_atis-ud-train.conllu")
-    atis_test = AtisDataset("AtisDataset/en_atis-ud-train.conllu")
+    atis_val = AtisDataset("AtisDataset/en_atis-ud-dev.conllu")
+    atis_test = AtisDataset("AtisDataset/en_atis-ud-test.conllu")
     return atis_train, atis_val, atis_test
