@@ -4,8 +4,6 @@ ArkTwitter/*.test
 ArkTwitter/*.train
 ArkTwitter/*.traindev
 TPANNDataset/*.txt
-TweeBankDataset/Tweebank-dev
-TweeBankDataset/README.md
 models
 .vscode
 nohup.out
