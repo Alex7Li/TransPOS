@@ -138,7 +138,7 @@ def validate_student(model_name, trained_student_path, train_dataset_name, train
     test_acc = training.get_validation_acc(preds, labels, train_dataset_name, val_dataset_name)
     return test_acc
 
-def run_experiment():
+def run_pseudolabel_experiment():
   teacher_model_name = 'bert-large-cased'
   student_model_name = 'bert-large-cased'
   supervised_dataset_n_labels = 17
@@ -179,7 +179,7 @@ def main():
       os.mkdir('pseudolabels')
   if not os.path.exists('models'):
       os.mkdir('models')
-  results = run_experiment(); 
+  results = run_pseudolabel_experiment(); 
   print(results)
   with open('psuedolabel_out.pkl', 'wb') as f:
       pickle.dump(results, f)
