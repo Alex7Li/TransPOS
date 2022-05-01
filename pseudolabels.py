@@ -23,7 +23,7 @@ from torch.optim import AdamW
 from transformers import AutoTokenizer
 from dataloading_utils import get_validation_acc
 
-batch_size = 8
+batch_size = 16
 class PseudoDataset(torch.utils.data.Dataset):
     def __init__(self, pseudolabel_path): 
         loaded = np.load(pseudolabel_path, allow_pickle=True)
@@ -61,7 +61,7 @@ class MergedDataset(torch.utils.data.Dataset):
 
 def train_teacher(model_name, dataset_name, save_path):
   hparams = {
-      'n_epochs': 1,
+      'n_epochs': 10,
       'batch_size': batch_size,
       'dataset': dataset_name,
       'model_name': model_name,
@@ -126,7 +126,7 @@ def train_on_psuedolabels(model_name, pseudolabel_path, base_dataset_name, save_
   val_dataset = training.get_dataset(base_dataset_name, 'val')
   val_dataloader = training.get_dataloader(model_name, val_dataset, batch_size, shuffle=False)
   model = training.load_model(model_name, dataset1.num_labels)
-  n_epochs = 1
+  n_epochs = 4
   training.training_loop(model, train_dataloader, val_dataloader, base_dataset_name, n_epochs, save_path)
   return save_path
 
