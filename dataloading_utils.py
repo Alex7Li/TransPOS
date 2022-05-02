@@ -221,8 +221,10 @@ def get_acc(preds, labels):
   for i in range(len(preds)):
     if preds[i] == labels[i]:
       num_correct += 1
-
-  return num_correct / len(preds)
+  if len(preds) == 0:
+    return 0
+  else:
+    return num_correct / len(preds)
 
 def get_validation_acc(preds, labels, train_dataset_name, val_dataset_name):
     train_index_pos_mapping, train_dataset_to_twee_pos_mapping = get_dataset_mapping(train_dataset_name)

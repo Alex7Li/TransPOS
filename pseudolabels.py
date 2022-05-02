@@ -133,7 +133,7 @@ def train_on_psuedolabels(model_name, pseudolabel_path, base_dataset_name, save_
   val_dataset = training.get_dataset(base_dataset_name, 'val')
   val_dataloader = training.get_dataloader(model_name, val_dataset, batch_size, shuffle=False)
   student = training.load_model(model_name, dataset1.num_labels)
-  n_epochs = 5
+  n_epochs = 3
   training.training_loop(student, train_dataloader, val_dataloader, base_dataset_name, n_epochs, save_path)
   return save_path
 

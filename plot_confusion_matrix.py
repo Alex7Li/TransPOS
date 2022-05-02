@@ -10,7 +10,7 @@ def matrix_to_str(matrix):
 def plot_confusion(confusion_matrix, dataset_names, given_title='title'):
     cf_matrix_list_str = matrix_to_str(confusion_matrix)
     # print(f"cf_matrix_list_str: {cf_matrix_list_str}")
-    fig = ff.create_annotated_heatmap(confusion_matrix, x=dataset_names, y=dataset_names,
+    fig = ff.create_annotated_heatmap(confusion_matrix, x=dataset_names[::-1], y=dataset_names,
         annotation_text=cf_matrix_list_str, autocolorscale=True)
     #https://stackoverflow.com/questions/60860121/plotly-how-to-make-an-annotated-confusion-matrix-using-a-heatmap
     # add title
@@ -64,9 +64,11 @@ def main(results):
 
         plot_confusion(matrix[-1], dataset_names, given_title=model_used.split('/')[-1])
 
+# Check the xy axis, its made in a hacky way so the order of the labels in the map matters0
 if __name__ == "__main__":
     # in_path = 'model_out.pkl'
     in_path = 'psuedolabel_out.pkl'
     with open(in_path, 'rb') as f:
         results = pickle.load(f)
+    results = {'bert-large-cased': {'TPANN': {'tweebank': 77.97622165191432, 'GUM': 84.81560499847608, 'TPANN': 92.44871235268441}, 'GUM': {'tweebank': 78.97135075682186, 'GUM': 97.59219750076197, 'TPANN': 15.102575294631166}, 'tweebank': {'tweebank': 94.23872623474571, 'GUM': 18.11033221578787, 'TPANN': 77.6080314273243}}}
     main(results)

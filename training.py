@@ -7,7 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1mcgqfKcW_5BSCRxJmcLxjSZ0FYQkeN3p
 """
 import matplotlib.pyplot as plt
-from torch.optim import AdamW
+import torch.optim
 import numpy as np
 import os
 import pandas as pd
@@ -19,7 +19,6 @@ from tqdm import tqdm as std_tqdm
 tqdm = partial(std_tqdm, leave=False, position=0, dynamic_ncols=True)
 import torch
 from torch.utils.data import DataLoader
-from torch.optim import AdamW
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import *
@@ -201,7 +200,7 @@ def load_model(model_name, num_labels):
     return model.to(device)
 
 def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
-    optimizer = AdamW(model.parameters(), lr=5e-5)
+    optimizer = torch.optim.NAdam(model.parameters(), lr=5e-5, weight_decay=1e-4)
 
     lr_scheduler = get_scheduler(
         name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
