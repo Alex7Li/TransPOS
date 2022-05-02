@@ -29,6 +29,7 @@ from TPANNDataset.load_tpann import load_tpann
 from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
+import nltk
 nltk.download('wordnet')
 from nltk.corpus import wordnet as wn
 import spacy
@@ -41,13 +42,13 @@ atis_train, atis_val, atis_test = load_atis()
 gum_train, gum_val, gum_test = load_gum()
 
 model_names = [
+    'bert-large-cased',
     'gpt2',
     'vinai/bertweet-large',
     'roberta-large',
-    'bert-large-cased',
 ]
 dataset_names = [
-    'TPANN',
+    # 'TPANN',
     'GUM',
     'tweebank',
     #'ark',
@@ -70,7 +71,7 @@ def validation_epoch(model, val_dataloader):
     model.eval()
     preds = []
     labels = []
-    for batch in tqdm(val_dataloader, desc='Validation'):
+    for i, batch in enumerate(tqdm(val_dataloader, desc='Validation')):
         batch = {k: v.to(device) for k, v in batch.items()}
         batch_labels = batch['labels']
         del batch['labels']
@@ -79,6 +80,7 @@ def validation_epoch(model, val_dataloader):
     
         logits = outputs.logits
         predictions = torch.argmax(logits, dim=-1)
+        assert(len(predictions) == len(batch_labels))
         preds.append(predictions)
         labels.append(batch_labels)
     return filter_negative_hundred(preds, labels)
@@ -192,7 +194,10 @@ def get_augmented_dataset(train_X,train_Y):
   return augmented_examples, augmented_labels    
 
 def load_model(model_name, num_labels):
-    model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
+    model = AutoModelForTokenClassification.from_pretrained(
+        model_name, num_labels=num_labels,
+        #ignore_mismatched_sizes=True # No warnings to clutter logs
+    )
     return model.to(device)
 
 def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
@@ -248,8 +253,8 @@ def run_experiment():
             result_dict[model_name][train_dataset_name] = dict()
 
             hparams = {
-                'n_epochs': 10,
-                'batch_size': 32,
+                'n_epochs': 1,
+                'batch_size': 8,
                 'dataset': train_dataset_name,
                 'model_name': model_name,
             }
@@ -258,15 +263,19 @@ def run_experiment():
             hparams['save_path'] = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
 
             print(f"Training on: {train_dataset_name}, with model: {model_name}")
-            trained_model = pipeline(hparams)
-            
+            if not os.path.exists(hparams['save_path']):
+                trained_model = pipeline(hparams)
+            else:
+                dataset = get_dataset(train_dataset_name, 'train')
+                trained_model = load_model(model_name, dataset.num_labels)
+
             for test_dataset_name in dataset_names:
                 print(f"Validating: {test_dataset_name}, with model: {model_name}, trained on: {train_dataset_name}")
-                val_dataset = get_dataset(test_dataset_name, 'val')
+                val_dataset = get_dataset(test_dataset_name, 'test')
                 val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
                 preds, labels = validation_epoch(trained_model, val_dataloader)
                 acc = get_validation_acc(preds, labels,  train_dataset_name, test_dataset_name)
-                print(f"Test Accuracy on {test_dataset_name}: {round(100*acc,3)}%")
+                print(f"Test Accuracy on {test_dataset_name}: {100:.3f}%")
                 result_dict[model_name][train_dataset_name][test_dataset_name] = 100*acc
 
     return result_dict
