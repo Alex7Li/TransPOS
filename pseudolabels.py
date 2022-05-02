@@ -148,10 +148,10 @@ def validate_student(model_name, trained_student_path, train_dataset_name, train
 
 def run_pseudolabel_experiment():
   model_names = [
-    'gpt2',
-    'vinai/bertweet-large',
-    'roberta-large',
-    # 'bert-large-cased'
+    'bert-large-cased',
+    # 'gpt2',
+    # 'vinai/bertweet-large',
+    # 'roberta-large',
   ]
   result_dict = dict()
   for model_name in model_names:
@@ -206,6 +206,7 @@ def run_pseudolabel_experiment():
   return result_dict
 
 def main():
+  print("starting")
   if not os.path.exists('pseudolabels'):
       os.mkdir('pseudolabels')
   if not os.path.exists('models'):

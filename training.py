@@ -200,10 +200,10 @@ def load_model(model_name, num_labels):
     return model.to(device)
 
 def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
-    optimizer = torch.optim.NAdam(model.parameters(), lr=5e-5, weight_decay=1e-4)
+    optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
 
     lr_scheduler = get_scheduler(
-        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
+        name="cosine", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
     )
     val_accs = []
     torch.save(model.state_dict(), save_path)
