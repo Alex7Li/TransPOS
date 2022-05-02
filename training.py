@@ -48,7 +48,7 @@ model_names = [
     'roberta-large',
 ]
 dataset_names = [
-    # 'TPANN',
+    'TPANN',
     'GUM',
     'tweebank',
     #'ark',

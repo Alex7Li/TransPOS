@@ -4,6 +4,7 @@ from plotly.tools import FigureFactory as ff
 import pickle
 from training import dataset_names
 def matrix_to_str(matrix):
+    matrix = np.round(matrix, 2)
     return np.array(matrix).astype(str).copy()
 
 def plot_confusion(confusion_matrix, dataset_names, given_title='title'):
