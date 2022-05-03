@@ -29,8 +29,7 @@ from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
 import nltk
-nltk.download('wordnet')
-from nltk.corpus import wordnet as wn
+
 import spacy
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -39,6 +38,9 @@ tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 atis_train, atis_val, atis_test = load_atis()
 gum_train, gum_val, gum_test = load_gum()
+def download_wordnet():
+    nltk.download('wordnet')
+    from nltk.corpus import wordnet as wn
 
 model_names = [
     'bert-large-cased',
@@ -252,14 +254,14 @@ def run_experiment():
             result_dict[model_name][train_dataset_name] = dict()
 
             hparams = {
-                'n_epochs': 1,
+                'n_epochs': 10,
                 'batch_size': 8,
                 'dataset': train_dataset_name,
                 'model_name': model_name,
             }
             if not os.path.exists('models'):
                 os.mkdir('models')
-            hparams['save_path'] = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
+            hparams['save_path'] = os.path.join('models', "teacher_" + hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
 
             print(f"Training on: {train_dataset_name}, with model: {model_name}")
             if not os.path.exists(hparams['save_path']):
@@ -267,6 +269,7 @@ def run_experiment():
             else:
                 dataset = get_dataset(train_dataset_name, 'train')
                 trained_model = load_model(model_name, dataset.num_labels)
+                trained_model.load_state_dict(torch.load(hparams['save_path']))
 
             for test_dataset_name in dataset_names:
                 print(f"Validating: {test_dataset_name}, with model: {model_name}, trained on: {train_dataset_name}")
@@ -274,7 +277,7 @@ def run_experiment():
                 val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
                 preds, labels = validation_epoch(trained_model, val_dataloader)
                 acc = get_validation_acc(preds, labels,  train_dataset_name, test_dataset_name)
-                print(f"Test Accuracy on {test_dataset_name}: {100:.3f}%")
+                print(f"Test Accuracy on {test_dataset_name}: {100 * acc :.3f}%")
                 result_dict[model_name][train_dataset_name][test_dataset_name] = 100*acc
 
     return result_dict

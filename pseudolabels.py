@@ -121,6 +121,7 @@ def generate_pseudo_labels(teacher_path, teacher_model_name, supervised_dataset_
   pseudo_acc = get_validation_acc(preds_pseudo, labels_pseudo,
       supervised_dataset_name, supervised_dataset_name)
   print(f"Accuracy of pseudolabels {100*pseudo_acc:.2f}")
+  print(f"Generated Pseudolabels. Saved to {save_path}")
   # psuedo acc should be 100%
   # assert(abs(pseudo_acc - 1) <= 1e-6)
   return save_path
@@ -149,9 +150,9 @@ def validate_student(model_name, trained_student_path, train_dataset_name, train
 def run_pseudolabel_experiment():
   model_names = [
     'bert-large-cased',
-    # 'gpt2',
-    # 'vinai/bertweet-large',
-    # 'roberta-large',
+    'gpt2',
+    'vinai/bertweet-large',
+    'roberta-large',
   ]
   result_dict = dict()
   for model_name in model_names:
@@ -179,19 +180,30 @@ def run_pseudolabel_experiment():
           if not os.path.exists(pseudolabel_path) and not os.path.exists(student_model_path):
             generate_pseudo_labels(teacher_model_path, teacher_model_name, supervised_dataset_name,\
               supervised_dataset_n_labels, unsupervised_dataset_name, pseudolabel_path)
-            print(f"Generated Pseudolabels. Saved to {pseudolabel_path}")
+          test_acc = 0
+          ERROR_THRESH = .2
+          while test_acc < ERROR_THRESH:
 
-          if not os.path.exists(student_model_path):
-            train_on_psuedolabels(student_model_name, pseudolabel_path, supervised_dataset_name, student_model_path)
-            print(f"Student has been trained, saved to {student_model_path}")
+            if not os.path.exists(student_model_path):
+              train_on_psuedolabels(student_model_name, pseudolabel_path, supervised_dataset_name, student_model_path)
+              print(f"Student has been trained, saved to {student_model_path}")
 
-          test_acc = validate_student(student_model_name, student_model_path,\
-              supervised_dataset_name, supervised_dataset_n_labels, unsupervised_dataset_name)
-          print(f"{student_model_name} trained with teacher {teacher_model_name} on {supervised_dataset_name} "
-              f"has accuracy {test_acc * 100:.2f}% on {unsupervised_dataset_name}")
-          test_acc_teacher = validate_student(student_model_name, teacher_model_path,\
-              supervised_dataset_name, supervised_dataset_n_labels, unsupervised_dataset_name)
-          print(f"Teacher model on same dataset: {test_acc_teacher * 100:.2f}")
+            test_acc = validate_student(student_model_name, student_model_path,\
+                supervised_dataset_name, supervised_dataset_n_labels, unsupervised_dataset_name)
+            print(f"{student_model_name} trained with teacher {teacher_model_name} on {supervised_dataset_name} "
+                f"has accuracy {test_acc * 100:.2f}% on {unsupervised_dataset_name}")
+            if test_acc < ERROR_THRESH:
+              print("ITS SO BAD")
+              print("------------------------------------")
+              os.remove(student_model_path)
+              if not os.path.exists(pseudolabel_path):
+                generate_pseudo_labels(teacher_model_path, teacher_model_name, supervised_dataset_name,\
+                  supervised_dataset_n_labels, unsupervised_dataset_name, pseudolabel_path)
+            
+            # test_acc_teacher = validate_student(student_model_name, teacher_model_path,\
+            #     supervised_dataset_name, supervised_dataset_n_labels, unsupervised_dataset_name)
+            
+            # print(f"Teacher model on same dataset: {test_acc_teacher * 100:.2f}")
           
           # I'm running out of disk space O:
           if os.path.exists(pseudolabel_path):
