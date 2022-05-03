@@ -12,7 +12,7 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
-
+import itertools
 from transformers import DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer, BertForTokenClassification, AutoTokenizer, get_scheduler
 from functools import partial
 from tqdm import tqdm as std_tqdm
@@ -29,9 +29,15 @@ from TPANNDataset.load_tpann import load_tpann
 from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
-nltk.download('wordnet')
+import nltk
+from augmented_datasets import ArkAugDataset,TPANNAugDataset,AtisAugDataset,GUMAugDataset,TweebankAugTrain,get_augmented_dataloader,generate_mask_and_data
+# nltk.data.path.append('/home/ubuntu/SemiTPOT/nltk_data')
+# nltk.download('punkt')
+# nltk.download('wordnet')
 from nltk.corpus import wordnet as wn
 import spacy
+from dataloading_utils import create_pos_mapping
+from conllu import parse_incr
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 ark_train, ark_val, ark_test = load_ark()
@@ -39,7 +45,6 @@ tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 atis_train, atis_val, atis_test = load_atis()
 gum_train, gum_val, gum_test = load_gum()
-
 model_names = [
     'gpt2',
     'vinai/bertweet-large',
@@ -65,6 +70,69 @@ def train_epoch(model, train_dataloader, optimizer, scheduler):
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
+def train_epoch_aug(model, train_dataloader, optimizer, scheduler):
+    model.train()
+    mse_loss = nn.MSELoss()
+    eps = 1e-4
+    lambda_ = 1
+    mu = 25
+    nu = 1
+    for batch in tqdm(train_dataloader, desc='Training'):
+        batch = {k: v.to(device) for k, v in batch.items()}
+        # print("Initial input id shape: ", batch["input_ids"].shape,"\n")
+        # print("and the 0th element: ",batch["input_ids"][0] )
+        # print("batch input ids: ", )
+        batch_input_ids, batch_input_ids_aug,mid = generate_mask_and_data(batch["input_ids"],"input",mid=None)
+        # print("Updated input id shape: ",batch_input_ids.shape,"\n")
+        # print("Updated input id aug shape: ",batch_input_ids_aug.shape,"\n")
+        # print("Initial input id val: ", batch["input_ids"][0])
+        # print("Updated input id val: ", batch_input_ids[0])
+        # print("Updated input id aug val: ", batch_input_ids_aug[0])
+        # input("acha ap ke se he?")
+        batch_attention_mask, batch_attention_mask_aug,_= generate_mask_and_data(batch["attention_mask"],"attention",mid=mid)
+        batch_labels,batch_labels_aug,_ = generate_mask_and_data(batch["labels"],"labels",mid=mid)
+        
+        batch_normal = {"input_ids":batch_input_ids,"attention_mask":batch_attention_mask,"labels":batch_labels}
+        batch_aug = {"input_ids":batch_input_ids_aug,"attention_mask":batch_attention_mask_aug,"labels":batch_labels_aug}
+        
+        
+        z_normal = model(**batch_normal)
+        z_aug = model(**batch_aug)
+        z_normal_cross_entropy = z_normal.loss
+        z_aug_cross_entropy = z_aug.loss
+        cross_entropy_loss = z_normal_cross_entropy + z_aug_cross_entropy
+        # print("cross entropy loss: ", cross_entropy_loss)
+        # input("")
+        # print("worked through the model!")
+        # print("type z normal: ", z_normal.logits.shape)
+        # print("z_normal shape: ", z_normal.shape)
+        # print("z aug shape: ", z_aug.shape)
+        
+        #Invariance loss [Done]
+        sim_loss = mse_loss(z_normal.logits,z_aug.logits)
+
+        #Variance loss [Done]
+        std_z_a = torch.sqrt(z_aug.logits.var(dim=0)+eps)
+        std_z_b = torch.sqrt(z_normal.logits.var(dim=0)+eps)
+        std_loss = torch.mean(nn.functional.relu(1-std_z_a)) + torch.mean(nn.functional.relu(1-std_z_b))
+        
+        #Covariance loss[Done]
+        z_normal = z_normal.logits - z_normal.logits.mean(0) #B X words X Dim
+        z_aug = z_aug.logits - z_aug.logits.mean(0)
+
+        cov_z_a = torch.bmm(z_aug, torch.transpose(z_aug,1,2))/batch_normal["input_ids"].shape[0]
+        cov_z_b = torch.bmm(z_normal,torch.transpose(z_normal,1,2))/batch_normal["input_ids"].shape[0]
+        cov_loss = (torch.sum(cov_z_a) - torch.diagonal(cov_z_a,0).pow(2).sum()) + (torch.sum(cov_z_b) - torch.diagonal(cov_z_b,0).pow(2).sum())
+        cov_loss = cov_loss / z_normal.shape[1]
+        # print("cov loss: ",cov_loss)
+        # input("")
+        #loss 
+        loss = lambda_ * sim_loss + mu * std_loss + nu*cov_loss + cross_entropy_loss
+        # loss = outputs.loss
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+        optimizer.zero_grad()
 
 def validation_epoch(model, val_dataloader):
     model.eval()
@@ -83,6 +151,37 @@ def validation_epoch(model, val_dataloader):
         labels.append(batch_labels)
     return filter_negative_hundred(preds, labels)
 
+def validation_epoch_aug(model, val_dataloader):
+    model.eval()
+    preds_normal = []
+    preds_aug = []
+    labels = []
+    for batch in tqdm(val_dataloader, desc='Validation'):
+        batch = {k: v.to(device) for k, v in batch.items()}
+        batch_labels = batch['labels']
+        del batch['labels']
+        batch_input_ids, batch_input_ids_aug,mid = generate_mask_and_data(batch["input_ids"],"input",mid=None)
+        batch_attention_mask, batch_attention_mask_aug,_= generate_mask_and_data(batch["attention_mask"],"attention",mid=mid)
+        batch_labels,batch_labels_aug,_ = generate_mask_and_data(batch_labels,"labels",mid=mid)
+        batch_normal = {"input_ids":batch_input_ids,"attention_mask":batch_attention_mask,"labels":batch_labels}
+        batch_aug = {"input_ids":batch_input_ids_aug,"attention_mask":batch_attention_mask_aug,"labels":batch_labels_aug}
+        with torch.no_grad():
+            outputs_normal = model(**batch_normal)
+            outputs_aug = model(**batch_aug)
+    
+        logits_normal = outputs_normal.logits
+        predictions_normal = torch.argmax(logits_normal, dim=-1)
+        preds_normal.append(predictions_normal)
+
+        logits_aug = outputs_aug.logits
+        predictions_aug = torch.argmax(logits_aug, dim=-1)
+        preds_aug.append(predictions_aug)
+
+        labels.append(batch_labels)
+        preds_normal , labels = filter_negative_hundred(preds_normal, labels)
+        preds_aug, labels = filter_negative_hundred(preds_aug, labels)
+    return preds_normal,preds_aug,labels
+
 def get_dataloader(model_name, dataset, batch_size, shuffle=False):
     tokenizer = AutoTokenizer.from_pretrained(model_name, add_prefix_space=True, use_fast=True)
     if model_name == 'gpt2':
@@ -91,6 +190,9 @@ def get_dataloader(model_name, dataset, batch_size, shuffle=False):
     compat_dataset = TransformerCompatDataset(dataset, tokenizer)
     dataloader = DataLoader(compat_dataset, shuffle=shuffle, batch_size=batch_size, collate_fn=data_collator)
     return dataloader
+
+
+      
 
 def get_dataset(dataset_name, partition):
     assert partition in {'train', 'val', 'test'}
@@ -147,53 +249,97 @@ def get_augmented_dataset(train_X,train_Y):
     break2 = False
     break3 = False
     augmented = False
+    change_made = False
     ex = sentence.copy()
     num_words_to_augment = max(1,int(augment_percent*(len(sentence))))
     for j,word in enumerate(sentence):
-      if train_Y[i][j] in ["V","N","A"]:
-        for s,synset in enumerate(wn.synsets(train_X[i][j])):
-          if s==0:
-            continue
-          if synset.pos() == train_Y[i][j].lower():
-            for lemma in synset.lemmas():
-              ex[j] = lemma.name()
-              num_words_to_augment-=1
-              if num_words_to_augment ==0:
-                augmented_examples.append(ex)
-                augmented_labels.append(train_Y[i])
-                break1 = True
-                augmented = True
+        temp_pos = ""
+        if train_Y[i][j] in ["V","N","A","VB","VBD","VBG","VBN","VBP",
+                            "VBZ","JJ","JJS","JJR","NN","NNS","ADJ","NOUN","VERB"]:
+            if train_Y[i][j] in ["VB","VBD","VBG","VBN","VBP","VBZ","VERB"]:
+                temp_pos = "V"
+
+            if train_Y[i][j] in ["JJ","JJS","JJR","ADJ"]:
+                temp_pos = "A"
+            if train_Y[i][j] in ["NN","NNS","NOUN"]:
+                temp_pos = "N"
+            # print("temp_pos: ", temp_pos)
+            # input("")
+            for s,synset in enumerate(wn.synsets(train_X[i][j])):
+                if s==0:
+                    continue
+                if synset.pos() == train_Y[i][j].lower() or synset.pos() ==temp_pos.lower():
+                    for lemma in synset.lemmas():
+                        ex[j] = lemma.name()
+                        change_made=True
+                        num_words_to_augment-=1
+                        if num_words_to_augment ==0:
+                            augmented_examples.append([ex,train_X[i]])
+                            augmented_labels.append(train_Y[i])
+                            break1 = True
+                            augmented = True
+                            break
+                        elif j==(len(sentence)-1) and change_made:
+                            augmented_examples.append([ex,train_X[i]])
+                            augmented_labels.append(train_Y[i])
+                            augmented = True
+                            break1 = True
+                            break
+                        elif num_words_to_augment>0:
+                            breaktonextword = True
+                            break
+                if breaktonextword:
+                    breaktonextword = False
+                    break
+                if break1:
+                    break1 = False
+                    break2 = True
+                    break
+            if break2:
+                break2 = False
                 break
-              elif j==(len(sentence)-1):
-                augmented_examples.append(ex)
-                augmented_labels.append(train_Y[i])
-                augmented = True
-                break1 = True
-                break
-              elif num_words_to_augment>0:
-                breaktonextword = True
-                break
-          if breaktonextword:
-            breaktonextword = False
-            break
-          if break1:
-            break1 = False
-            break2 = True
-            break
-        if break2:
-          break2 = False
-          break
-      else:
-        if augmented:
-          augmented_examples.append(ex)
-          augmented_labels.append(train_Y[i])
-          augmented = False
-          break
-  return augmented_examples, augmented_labels    
+        
+  return augmented_examples, augmented_labels
+
+augmented_ark_train_dataloader = get_augmented_dataloader(dataset="ark",partition="train",model="gpt2")
+
 
 def load_model(model_name, num_labels):
     model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
     return model.to(device)
+def training_loop_aug(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
+    optimizer = AdamW(model.parameters(), lr=5e-5)
+
+    lr_scheduler = get_scheduler(
+        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
+    )
+    val_accs = []
+    torch.save(model.state_dict(), save_path)
+    best_val_acc = 0
+    for i in tqdm(range(0, n_epochs), desc='Training epochs'):
+        for batch in train_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+        train_epoch_aug(model, train_dataloader, optimizer, lr_scheduler)
+    
+        preds_normal,preds_aug, labels = validation_epoch_aug(model, val_dataloader)
+        val_acc_normal = get_validation_acc(preds_normal, labels, dataset_name, dataset_name)
+        val_acc_aug = get_validation_acc(preds_aug, labels, dataset_name, dataset_name)
+        val_accs.append((val_acc_normal + val_acc_aug) / 2 )
+        if val_acc > best_val_acc:
+            torch.save(model.state_dict(), save_path)
+        print(f"Val Accuracy Train epoch {i+1}: {round(100*val_acc,3)}%")
+        
+    if n_epochs > 1:
+        # Make ranadeep happy
+        plt.xlabel('epoch')
+        plt.ylabel('accuracy')
+        plt.ylim([.4, 1])
+        plt.title(f"Training curve for model at {save_path}")
+        plt.plot(range(n_epochs), val_accs)
+        plt.show()
+    model.load_state_dict(torch.load(save_path))  
+    return model
+
 
 def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
     optimizer = AdamW(model.parameters(), lr=5e-5)
@@ -205,6 +351,10 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
     torch.save(model.state_dict(), save_path)
     best_val_acc = 0
     for i in tqdm(range(0, n_epochs), desc='Training epochs'):
+        for batch in train_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+        print("entering train epoch aug: \n")
+        train_epoch_aug(model, train_dataloader, optimizer, lr_scheduler) # added
         train_epoch(model, train_dataloader, optimizer, lr_scheduler)
     
         preds, labels = validation_epoch(model, val_dataloader)
@@ -226,14 +376,29 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
     return model
 
 def pipeline(hparams):
+    run_aug = True
     torch.cuda.empty_cache()
     train_dataset = get_dataset(hparams['dataset'], 'train')
     train_dataloader = get_dataloader(hparams['model_name'], train_dataset, hparams['batch_size'])
+    print("\nchecking normal shape")
+    ##Checking
+    for batch in train_dataloader:
+        batch = {k: v.to(device) for k, v in batch.items()}
+    #Stop checking
     val_dataset = get_dataset(hparams['dataset'], 'val')
     val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
+    
     num_labels = train_dataset.num_labels
     n_epochs = hparams['n_epochs']
     model = load_model(hparams['model_name'], num_labels)
+    if run_aug:
+        train_dataloader = get_augmented_dataloader(dataset="ark",partition="train",model="gpt2") # added
+        for batch in train_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+        val_dataloader = get_augmented_dataloader(dataset="ark",partition="dev",model="gpt2") # added
+        for batch in val_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+        return training_loop_aug(model, train_dataloader, val_dataloader, hparams['dataset'], n_epochs, hparams['save_path'])
     return training_loop(model, train_dataloader, val_dataloader, hparams['dataset'], n_epochs, hparams['save_path'])
 
 
