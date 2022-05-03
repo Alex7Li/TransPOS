@@ -3,8 +3,9 @@ from dataloading_utils import get_dataset_mapping
 import matplotlib.pyplot as plt
 import seaborn
 import pandas as pd
-from training import training_loop, get_dataset, validation_epoch
-
+from training import pipeline, get_dataset, validation_epoch, load_model, get_dataloader
+import torch
+import os
 def invert_permutation(perm):
     inverse = [0] * len(perm)
     for i, p in enumerate(perm):
@@ -45,22 +46,29 @@ def plot_label_confusion(preds, labels, train_dataset_name, val_dataset_name):
     heatmap = seaborn.heatmap(df_cm, annot=True, fmt='g')
     heatmap.set_xlabel(train_dataset_name)
     heatmap.set_ylabel(val_dataset_name)
-    plt.savefig(f'label_confusion_train_{train_dataset_name}_val_{val_dataset_name}.png')
+    plt.savefig(os.path.join("Results", f'label_confusion_train_{train_dataset_name}_val_{val_dataset_name}.png'))
 
 def get_model_predictions_and_true_labels(hparams, val_dataset_name):
-    model = training_loop(hparams)
+    hparams['save_path'] = os.path.join('models', "teacher_" + hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
+    if os.path.exists(hparams['save_path']):
+        dataset = get_dataset(hparams['dataset'], 'train')
+        model = load_model(hparams['model_name'], dataset.num_labels)
+        model.load_state_dict(torch.load(hparams['save_path']))
+    else:
+        model = pipeline(hparams)
 
-    val_dataloader, _ = get_dataset(hparams['model_name'], val_dataset_name, hparams['batch_size'], 'val')
+    val_dataset = get_dataset(val_dataset_name, 'val')
+    val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
     preds, labels = validation_epoch(model, val_dataloader)
 
     return preds, labels
 
 if __name__ == "__main__":
     preds_tpann, labels_tpann = get_model_predictions_and_true_labels({
-        'n_epochs': 3,
+        'n_epochs': 10,
         'batch_size': 8,
         'dataset': 'TPANN',
-        'model_name': 'roberta-large',
+        'model_name': 'vinai/bertweet-large',
     }, 'tweebank')
 
     plot_label_confusion(preds_tpann, labels_tpann, 'TPANN', 'tweebank')

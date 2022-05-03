@@ -52,6 +52,7 @@ def tokenize_and_align_labels(orig_x, orig_labels, tokenizer):
         # We set the label for the first token of each word.
         else:
             label_ids.append(orig_labels[word_idx])
+        prev_word_idx = word_idx
     tokenized_inputs['labels'] = label_ids
     return tokenized_inputs
 
@@ -131,6 +132,7 @@ def filter_negative_hundred(preds, labels):
   flattened_labels = [tensor.flatten() for tensor in labels]
   final_labels = torch.cat(flattened_labels, dim=0)
   final_labels = [tensor.item() for tensor in final_labels]
+  assert len(final_preds) == len(final_labels)
 
   pred_labels = [pair for pair in zip(final_preds, final_labels) if pair[1] != -100]
   final_preds = [pair[0] for pair in pred_labels]
@@ -219,8 +221,10 @@ def get_acc(preds, labels):
   for i in range(len(preds)):
     if preds[i] == labels[i]:
       num_correct += 1
-
-  return num_correct / len(preds)
+  if len(preds) == 0:
+    return 0
+  else:
+    return num_correct / len(preds)
 
 def get_validation_acc(preds, labels, train_dataset_name, val_dataset_name):
     train_index_pos_mapping, train_dataset_to_twee_pos_mapping = get_dataset_mapping(train_dataset_name)

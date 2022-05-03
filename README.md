@@ -38,9 +38,9 @@ If it doesn't work just install what you need by individually installing the req
 
 ```bash
 pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
-pip3 install numpy scipy plotly seaborn pandas matplotlib
+pip3 install numpy scipy plotly seaborn pandas matplotlib transformers
 pip3 install conllu
-pip3 install transformers
+pip3 install -U kaleido
 ```
 
 (Maybe you need to install torch separately)

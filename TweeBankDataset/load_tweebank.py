@@ -24,7 +24,11 @@ def data_reader(data_path):
 twee_train_path = "TweeBankDataset/Tweebank-dev/en-ud-tweet-train.conllu"
 twee_dev_path = "TweeBankDataset/Tweebank-dev/en-ud-tweet-dev.conllu"
 twee_test_path = "TweeBankDataset/Tweebank-dev/en-ud-tweet-test.conllu"
-TWEEBANK_POS_MAPPING = {'ADJ': 0, 'ADP': 1, 'ADV': 2, 'AUX': 3, 'CCONJ': 4, 'DET': 5, 'INTJ': 6, 'NOUN': 7, 'NUM': 8, 'PART': 9, 'PRON': 10, 'PROPN': 11, 'PUNCT': 12, 'SCONJ': 13, 'SYM': 14, 'VERB': 15, 'X': 16}
+TWEEBANK_POS_MAPPING = {
+    'ADJ': 0, 'ADP': 1, 'ADV': 2, 'AUX': 3, 'CCONJ': 4, 'DET': 5,
+    'INTJ': 6, 'NOUN': 7, 'NUM': 8, 'PART': 9, 'PRON': 10, 
+    'PROPN': 11, 'PUNCT': 12, 'SCONJ': 13, 'SYM': 14, 'VERB': 15, 'X': 16
+}
 
 # Create Dataset Classes
 class TweebankTrain(torch.utils.data.Dataset):

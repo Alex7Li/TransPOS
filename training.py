@@ -7,7 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1mcgqfKcW_5BSCRxJmcLxjSZ0FYQkeN3p
 """
 import matplotlib.pyplot as plt
-from torch.optim import AdamW
+import torch.optim
 import numpy as np
 import os
 import pandas as pd
@@ -19,7 +19,6 @@ from tqdm import tqdm as std_tqdm
 tqdm = partial(std_tqdm, leave=False, position=0, dynamic_ncols=True)
 import torch
 from torch.utils.data import DataLoader
-from torch.optim import AdamW
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import *
@@ -30,11 +29,15 @@ from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
 import nltk
+<<<<<<< HEAD
 from augmented_datasets import ArkAugDataset,TPANNAugDataset,AtisAugDataset,GUMAugDataset,TweebankAugTrain,get_augmented_dataloader,generate_mask_and_data
 # nltk.data.path.append('/home/ubuntu/SemiTPOT/nltk_data')
 # nltk.download('punkt')
 # nltk.download('wordnet')
 from nltk.corpus import wordnet as wn
+=======
+
+>>>>>>> 2034bf3b1600ef1d691c4a3d31001575fc9ae49f
 import spacy
 from dataloading_utils import create_pos_mapping
 from conllu import parse_incr
@@ -45,11 +48,18 @@ tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 atis_train, atis_val, atis_test = load_atis()
 gum_train, gum_val, gum_test = load_gum()
+<<<<<<< HEAD
+=======
+def download_wordnet():
+    nltk.download('wordnet')
+    from nltk.corpus import wordnet as wn
+
+>>>>>>> 2034bf3b1600ef1d691c4a3d31001575fc9ae49f
 model_names = [
+    'bert-large-cased',
     'gpt2',
     'vinai/bertweet-large',
     'roberta-large',
-    'bert-large-cased',
 ]
 dataset_names = [
     'TPANN',
@@ -138,7 +148,7 @@ def validation_epoch(model, val_dataloader):
     model.eval()
     preds = []
     labels = []
-    for batch in tqdm(val_dataloader, desc='Validation'):
+    for i, batch in enumerate(tqdm(val_dataloader, desc='Validation')):
         batch = {k: v.to(device) for k, v in batch.items()}
         batch_labels = batch['labels']
         del batch['labels']
@@ -147,6 +157,7 @@ def validation_epoch(model, val_dataloader):
     
         logits = outputs.logits
         predictions = torch.argmax(logits, dim=-1)
+        assert(len(predictions) == len(batch_labels))
         preds.append(predictions)
         labels.append(batch_labels)
     return filter_negative_hundred(preds, labels)
@@ -305,7 +316,10 @@ augmented_ark_train_dataloader = get_augmented_dataloader(dataset="ark",partitio
 
 
 def load_model(model_name, num_labels):
-    model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
+    model = AutoModelForTokenClassification.from_pretrained(
+        model_name, num_labels=num_labels,
+        #ignore_mismatched_sizes=True # No warnings to clutter logs
+    )
     return model.to(device)
 def training_loop_aug(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
     optimizer = AdamW(model.parameters(), lr=5e-5)
@@ -342,10 +356,10 @@ def training_loop_aug(model, train_dataloader, val_dataloader, dataset_name, n_e
 
 
 def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
-    optimizer = AdamW(model.parameters(), lr=5e-5)
+    optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
 
     lr_scheduler = get_scheduler(
-        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
+        name="cosine", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
     )
     val_accs = []
     torch.save(model.state_dict(), save_path)
@@ -414,24 +428,29 @@ def run_experiment():
 
             hparams = {
                 'n_epochs': 10,
-                'batch_size': 32,
+                'batch_size': 8,
                 'dataset': train_dataset_name,
                 'model_name': model_name,
             }
             if not os.path.exists('models'):
                 os.mkdir('models')
-            hparams['save_path'] = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
+            hparams['save_path'] = os.path.join('models', "teacher_" + hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
 
             print(f"Training on: {train_dataset_name}, with model: {model_name}")
-            trained_model = pipeline(hparams)
-            
+            if not os.path.exists(hparams['save_path']):
+                trained_model = pipeline(hparams)
+            else:
+                dataset = get_dataset(train_dataset_name, 'train')
+                trained_model = load_model(model_name, dataset.num_labels)
+                trained_model.load_state_dict(torch.load(hparams['save_path']))
+
             for test_dataset_name in dataset_names:
                 print(f"Validating: {test_dataset_name}, with model: {model_name}, trained on: {train_dataset_name}")
-                val_dataset = get_dataset(test_dataset_name, 'val')
+                val_dataset = get_dataset(test_dataset_name, 'test')
                 val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
                 preds, labels = validation_epoch(trained_model, val_dataloader)
                 acc = get_validation_acc(preds, labels,  train_dataset_name, test_dataset_name)
-                print(f"Test Accuracy on {test_dataset_name}: {round(100*acc,3)}%")
+                print(f"Test Accuracy on {test_dataset_name}: {100 * acc :.3f}%")
                 result_dict[model_name][train_dataset_name][test_dataset_name] = 100*acc
 
     return result_dict
