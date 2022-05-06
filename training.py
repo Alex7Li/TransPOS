@@ -29,18 +29,10 @@ from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
 import nltk
-<<<<<<< HEAD
-from augmented_datasets import ArkAugDataset,TPANNAugDataset,AtisAugDataset,GUMAugDataset,TweebankAugTrain,get_augmented_dataloader,generate_mask_and_data
-# nltk.data.path.append('/home/ubuntu/SemiTPOT/nltk_data')
-# nltk.download('punkt')
-# nltk.download('wordnet')
-from nltk.corpus import wordnet as wn
-=======
-
->>>>>>> 2034bf3b1600ef1d691c4a3d31001575fc9ae49f
 import spacy
 from dataloading_utils import create_pos_mapping
 from conllu import parse_incr
+from augmented_datasets import get_augmented_dataloader
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 ark_train, ark_val, ark_test = load_ark()
@@ -48,13 +40,10 @@ tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 atis_train, atis_val, atis_test = load_atis()
 gum_train, gum_val, gum_test = load_gum()
-<<<<<<< HEAD
-=======
 def download_wordnet():
     nltk.download('wordnet')
     from nltk.corpus import wordnet as wn
 
->>>>>>> 2034bf3b1600ef1d691c4a3d31001575fc9ae49f
 model_names = [
     'bert-large-cased',
     'gpt2',
@@ -312,7 +301,7 @@ def get_augmented_dataset(train_X,train_Y):
         
   return augmented_examples, augmented_labels
 
-augmented_ark_train_dataloader = get_augmented_dataloader(dataset="ark",partition="train",model="gpt2")
+# augmented_ark_train_dataloader = get_augmented_dataloader(dataset="ark",partition="train",model="gpt2")
 
 
 def load_model(model_name, num_labels):
