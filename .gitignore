@@ -5,6 +5,7 @@ ArkTwitter/*.train
 ArkTwitter/*.traindev
 TPANNDataset/*.txt
 models
+models_old
 .vscode
 nohup.out
 pseudolabels

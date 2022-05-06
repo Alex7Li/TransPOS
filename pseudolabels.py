@@ -61,7 +61,7 @@ class MergedDataset(torch.utils.data.Dataset):
 
 def train_teacher(model_name, dataset_name, save_path):
   hparams = {
-      'n_epochs': 10,
+      'n_epochs': 4,
       'batch_size': batch_size,
       'dataset': dataset_name,
       'model_name': model_name,
@@ -89,20 +89,46 @@ def get_x_and_pseudolabels(model, dataset, model_name):
   
       predictions = predictions.detach().cpu().numpy()
       confidence = confidence.detach().cpu().numpy()
+      label_confidences = [[] for _ in range(outputs.logits.shape[2])]
       for i in range(batch['input_ids'].shape[0]):
         x, _ = dataset[i + offset]
         tokenized_inputs = tokenizer(x, truncation=True, is_split_into_words=True)
         word_ids = tokenized_inputs.word_ids()
-        prev_word_id = -1
         seq_pseudo_labels = -100 * np.ones((len(x),),dtype=np.int32)
+        # TODO: Should we use the last word token instead of the first?
         for seq_ind in range(len(word_ids)):
           word_id = word_ids[seq_ind]
-          if word_id == prev_word_id or word_id is None:
+          if word_id is None:
+            continue # Ignore special tokens (SOS, EOS)
+          if seq_ind + 1 >= len(word_ids):
+            continue # Just in case the EOS is cut off or something
+          next_word_id = word_ids[seq_ind + 1]
+          if word_id == next_word_id:
             continue # Only 1 xy pair per word
-          if confidence[i][seq_ind] > .9:
+          label_confidences[predictions[i][seq_ind]].append(confidence[i][seq_ind])
+      # Use use_percent% of the labels for each class
+      use_percent = 30
+      label_req_confidences = []
+      for confidences in label_confidences:
+        percentile = np.percentile(confidences, 100 - use_percent)
+        label_req_confidences.append(percentile)
+      for i in range(batch['input_ids'].shape[0]):
+        x, _ = dataset[i + offset]
+        tokenized_inputs = tokenizer(x, truncation=True, is_split_into_words=True)
+        word_ids = tokenized_inputs.word_ids()
+        seq_pseudo_labels = -100 * np.ones((len(x),),dtype=np.int32)
+        # TODO: Should we use the last word token instead of the first?
+        for seq_ind in range(len(word_ids)):
+          word_id = word_ids[seq_ind]
+          if word_id is None:
+            continue # Ignore special tokens (SOS, EOS)
+          if seq_ind + 1 >= len(word_ids):
+            continue # Just in case the EOS is cut off or something
+          next_word_id = word_ids[seq_ind + 1]
+          if word_id == next_word_id:
+            continue # Only 1 xy pair per word
+          if confidence[i][seq_ind] > label_req_confidences[predictions[i][seq_ind]]:
             seq_pseudo_labels[word_id] = predictions[i][seq_ind]
-          else:
-            seq_pseudo_labels[word_id] = -100
         pseudolabels.append(torch.from_numpy(seq_pseudo_labels))
         inputs.append(x)
         
@@ -134,7 +160,7 @@ def train_on_psuedolabels(model_name, pseudolabel_path, base_dataset_name, save_
   val_dataset = training.get_dataset(base_dataset_name, 'val')
   val_dataloader = training.get_dataloader(model_name, val_dataset, batch_size, shuffle=False)
   student = training.load_model(model_name, dataset1.num_labels)
-  n_epochs = 10
+  n_epochs = 4
   training.training_loop(student, train_dataloader, val_dataloader, base_dataset_name, n_epochs, save_path)
   return save_path
 
@@ -149,20 +175,24 @@ def validate_student(model_name, trained_student_path, train_dataset_name, train
 
 def run_pseudolabel_experiment():
   model_names = [
-    'bert-large-cased',
-    'gpt2',
-    'vinai/bertweet-large',
+    # 'bert-large-cased',
+    # 'gpt2',
+    # 'vinai/bertweet-large',
     'roberta-large',
+  ]
+  dataset_names = [
+      'GUM',
+      'tweebank',
   ]
   result_dict = dict()
   for model_name in model_names:
     result_dict[model_name] = dict()
-    for supervised_dataset_name in training.dataset_names:
+    for supervised_dataset_name in dataset_names:
       result_dict[model_name][supervised_dataset_name] = dict()
   for model_name in model_names:
     teacher_model_name = model_name
     student_model_name = model_name
-    for supervised_dataset_name in training.dataset_names:
+    for supervised_dataset_name in dataset_names:
       teacher_model_path = os.path.join('models', "teacher_" + str(teacher_model_name.split('/')[-1]) + "_" + supervised_dataset_name)
       supervised_dataset_n_labels = training.get_dataset(supervised_dataset_name, 'train').num_labels
 
@@ -171,7 +201,7 @@ def run_pseudolabel_experiment():
         print(f"Done training. Saved to {teacher_model_path}")
       else:
         print("teach model path exists")
-      for unsupervised_dataset_name in training.dataset_names[::-1]: # backwards for no good reason
+      for unsupervised_dataset_name in dataset_names[::-1]: # backwards for no good reason
         if unsupervised_dataset_name != supervised_dataset_name:
           pseudolabel_path = os.path.join('pseudolabels', str(teacher_model_name.split('/')[-1]) +
               "_" + supervised_dataset_name + "_" + unsupervised_dataset_name + ".npz")

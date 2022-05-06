@@ -41,18 +41,23 @@ def tokenize_and_align_labels(orig_x, orig_labels, tokenizer):
 
     word_ids = tokenized_inputs.word_ids()
     label_ids = []
-    prev_word_idx = -1
-    for word_idx in word_ids:
+    for i, word_idx in enumerate(word_ids):
+      
         # Special tokens have a word id that is None. We set the label to -100 so they are automatically
         # ignored in the loss function.
         if word_idx is None:
             label_ids.append(PYTORCH_IGNORE_INDEX) 
-        elif prev_word_idx == word_idx:
+            continue
+        if i + 1 >= len(word_ids):
+          continue # Just in case the EOS is cut off or something
+        next_word_idx = word_ids[i + 1]
+        # We set the label for the last token of each word.
+        # Not the first, because gpt2 is unidirectional so it
+        # needs to read em all
+        if next_word_idx == word_idx:
             label_ids.append(PYTORCH_IGNORE_INDEX) 
-        # We set the label for the first token of each word.
         else:
             label_ids.append(orig_labels[word_idx])
-        prev_word_idx = word_idx
     tokenized_inputs['labels'] = label_ids
     return tokenized_inputs
 
