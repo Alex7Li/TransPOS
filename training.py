@@ -219,6 +219,9 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
         if val_acc > best_val_acc:
             torch.save(model.state_dict(), save_path)
         print(f"Val Accuracy Train epoch {i+1}: {round(100*val_acc,3)}%")
+        if val_acc < .2:
+            print(f"Model collapsed, restarting from last epoch.")
+            model.load_state_dict(torch.load(save_path))  
         
     if n_epochs > 1:
         # Make ranadeep happy
