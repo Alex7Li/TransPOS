@@ -183,7 +183,7 @@ def validation_epoch_aug(model, val_dataloader):
     return preds_normal,preds_aug,labels
 
 def get_dataloader(model_name, dataset, batch_size, shuffle=False):
-    tokenizer = AutoTokenizer.from_pretrained(model_name, add_prefix_space=True, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, add_prefix_space=True, use_fast=True, model_max_length=512)
     if model_name == 'gpt2':
         tokenizer.pad_token = tokenizer.eos_token
     data_collator = DataCollatorForTokenClassification(tokenizer)
@@ -344,7 +344,7 @@ def training_loop_aug(model, train_dataloader, val_dataloader, dataset_name, n_e
     return model
 
 
-def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
+def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path, aug=False):
     optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
 
     lr_scheduler = get_scheduler(
@@ -354,11 +354,13 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
     torch.save(model.state_dict(), save_path)
     best_val_acc = 0
     for i in tqdm(range(0, n_epochs), desc='Training epochs'):
-        for batch in train_dataloader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-        print("entering train epoch aug: \n")
-        train_epoch_aug(model, train_dataloader, optimizer, lr_scheduler) # added
-        train_epoch(model, train_dataloader, optimizer, lr_scheduler)
+        if aug:
+            for batch in train_dataloader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+            print("entering train epoch aug: \n")
+            train_epoch_aug(model, train_dataloader, optimizer, lr_scheduler) # added
+        else:
+            train_epoch(model, train_dataloader, optimizer, lr_scheduler)
     
         preds, labels = validation_epoch(model, val_dataloader)
         val_acc = get_validation_acc(preds, labels, dataset_name, dataset_name)
@@ -381,23 +383,21 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
     model.load_state_dict(torch.load(save_path))  
     return model
 
-def pipeline(hparams):
-    run_aug = True
+def pipeline(hparams, run_aug=False):
     torch.cuda.empty_cache()
     train_dataset = get_dataset(hparams['dataset'], 'train')
     train_dataloader = get_dataloader(hparams['model_name'], train_dataset, hparams['batch_size'])
-    print("\nchecking normal shape")
-    ##Checking
-    for batch in train_dataloader:
-        batch = {k: v.to(device) for k, v in batch.items()}
-    #Stop checking
     val_dataset = get_dataset(hparams['dataset'], 'val')
     val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
-    
     num_labels = train_dataset.num_labels
     n_epochs = hparams['n_epochs']
     model = load_model(hparams['model_name'], num_labels)
     if run_aug:
+        print("\nchecking normal shape")
+        ##Checking
+        for batch in train_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+        #Stop checking
         train_dataloader = get_augmented_dataloader(dataset="ark",partition="train",model="gpt2") # added
         for batch in train_dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
