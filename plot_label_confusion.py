@@ -67,8 +67,8 @@ if __name__ == "__main__":
     preds_tpann, labels_tpann = get_model_predictions_and_true_labels({
         'n_epochs': 10,
         'batch_size': 8,
-        'dataset': 'TPANN',
+        'dataset': 'ark',
         'model_name': 'vinai/bertweet-large',
     }, 'tweebank')
 
-    plot_label_confusion(preds_tpann, labels_tpann, 'TPANN', 'tweebank')
+    plot_label_confusion(preds_tpann, labels_tpann, 'ark', 'GUM')
