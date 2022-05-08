@@ -7,7 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1mcgqfKcW_5BSCRxJmcLxjSZ0FYQkeN3p
 """
 import matplotlib.pyplot as plt
-import torch.optim
+from torch.optim import AdamW
 import numpy as np
 import os
 import pandas as pd
@@ -19,6 +19,7 @@ from tqdm import tqdm as std_tqdm
 tqdm = partial(std_tqdm, leave=False, position=0, dynamic_ncols=True)
 import torch
 from torch.utils.data import DataLoader
+from torch.optim import AdamW
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import *
@@ -29,15 +30,11 @@ from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
 import nltk
-<<<<<<< HEAD
 from augmented_datasets import ArkAugDataset,TPANNAugDataset,AtisAugDataset,GUMAugDataset,TweebankAugTrain,get_augmented_dataloader,generate_mask_and_data
 # nltk.data.path.append('/home/ubuntu/SemiTPOT/nltk_data')
 # nltk.download('punkt')
 # nltk.download('wordnet')
 from nltk.corpus import wordnet as wn
-=======
-
->>>>>>> 2034bf3b1600ef1d691c4a3d31001575fc9ae49f
 import spacy
 from dataloading_utils import create_pos_mapping
 from conllu import parse_incr
@@ -48,23 +45,16 @@ tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 atis_train, atis_val, atis_test = load_atis()
 gum_train, gum_val, gum_test = load_gum()
-<<<<<<< HEAD
-=======
-def download_wordnet():
-    nltk.download('wordnet')
-    from nltk.corpus import wordnet as wn
-
->>>>>>> 2034bf3b1600ef1d691c4a3d31001575fc9ae49f
 model_names = [
-    'bert-large-cased',
     'gpt2',
     'vinai/bertweet-large',
     'roberta-large',
+    'bert-large-cased',
 ]
 dataset_names = [
+    'tweebank',
     'TPANN',
     'GUM',
-    'tweebank',
     #'ark',
     #'atis',
 ]
@@ -75,6 +65,9 @@ def train_epoch(model, train_dataloader, optimizer, scheduler):
         batch = {k: v.to(device) for k, v in batch.items()}
         outputs = model(**batch)
         loss = outputs.loss
+        # print("loss type: ", type(loss))
+        # print("loss shape: ", loss.shape)
+        # input("")
         loss.backward()
 
         optimizer.step()
@@ -89,16 +82,9 @@ def train_epoch_aug(model, train_dataloader, optimizer, scheduler):
     nu = 1
     for batch in tqdm(train_dataloader, desc='Training'):
         batch = {k: v.to(device) for k, v in batch.items()}
-        # print("Initial input id shape: ", batch["input_ids"].shape,"\n")
-        # print("and the 0th element: ",batch["input_ids"][0] )
-        # print("batch input ids: ", )
+        
         batch_input_ids, batch_input_ids_aug,mid = generate_mask_and_data(batch["input_ids"],"input",mid=None)
-        # print("Updated input id shape: ",batch_input_ids.shape,"\n")
-        # print("Updated input id aug shape: ",batch_input_ids_aug.shape,"\n")
-        # print("Initial input id val: ", batch["input_ids"][0])
-        # print("Updated input id val: ", batch_input_ids[0])
-        # print("Updated input id aug val: ", batch_input_ids_aug[0])
-        # input("acha ap ke se he?")
+        
         batch_attention_mask, batch_attention_mask_aug,_= generate_mask_and_data(batch["attention_mask"],"attention",mid=mid)
         batch_labels,batch_labels_aug,_ = generate_mask_and_data(batch["labels"],"labels",mid=mid)
         
@@ -110,21 +96,24 @@ def train_epoch_aug(model, train_dataloader, optimizer, scheduler):
         z_aug = model(**batch_aug)
         z_normal_cross_entropy = z_normal.loss
         z_aug_cross_entropy = z_aug.loss
+
+        
         cross_entropy_loss = z_normal_cross_entropy + z_aug_cross_entropy
-        # print("cross entropy loss: ", cross_entropy_loss)
-        # input("")
-        # print("worked through the model!")
-        # print("type z normal: ", z_normal.logits.shape)
-        # print("z_normal shape: ", z_normal.shape)
-        # print("z aug shape: ", z_aug.shape)
+        
         
         #Invariance loss [Done]
         sim_loss = mse_loss(z_normal.logits,z_aug.logits)
-
+        z_normal_cross_entropy+=(sim_loss/2)*lambda_
+        z_aug_cross_entropy+=(sim_loss/2)*lambda_
+        
         #Variance loss [Done]
         std_z_a = torch.sqrt(z_aug.logits.var(dim=0)+eps)
         std_z_b = torch.sqrt(z_normal.logits.var(dim=0)+eps)
         std_loss = torch.mean(nn.functional.relu(1-std_z_a)) + torch.mean(nn.functional.relu(1-std_z_b))
+        
+        z_normal_cross_entropy+=(std_loss/2)*mu
+        z_aug_cross_entropy+=(std_loss/2)*mu
+        
         
         #Covariance loss[Done]
         z_normal = z_normal.logits - z_normal.logits.mean(0) #B X words X Dim
@@ -134,12 +123,15 @@ def train_epoch_aug(model, train_dataloader, optimizer, scheduler):
         cov_z_b = torch.bmm(z_normal,torch.transpose(z_normal,1,2))/batch_normal["input_ids"].shape[0]
         cov_loss = (torch.sum(cov_z_a) - torch.diagonal(cov_z_a,0).pow(2).sum()) + (torch.sum(cov_z_b) - torch.diagonal(cov_z_b,0).pow(2).sum())
         cov_loss = cov_loss / z_normal.shape[1]
-        # print("cov loss: ",cov_loss)
-        # input("")
-        #loss 
-        loss = lambda_ * sim_loss + mu * std_loss + nu*cov_loss + cross_entropy_loss
-        # loss = outputs.loss
-        loss.backward()
+
+        z_normal_cross_entropy+=(cov_loss/2)*nu
+        z_aug_cross_entropy+=(cov_loss/2)*nu
+
+
+
+        z_normal_cross_entropy.backward(retain_graph=True)
+        z_aug_cross_entropy.backward()
+        
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
@@ -148,7 +140,7 @@ def validation_epoch(model, val_dataloader):
     model.eval()
     preds = []
     labels = []
-    for i, batch in enumerate(tqdm(val_dataloader, desc='Validation')):
+    for batch in tqdm(val_dataloader, desc='Validation'):
         batch = {k: v.to(device) for k, v in batch.items()}
         batch_labels = batch['labels']
         del batch['labels']
@@ -157,9 +149,9 @@ def validation_epoch(model, val_dataloader):
     
         logits = outputs.logits
         predictions = torch.argmax(logits, dim=-1)
-        assert(len(predictions) == len(batch_labels))
         preds.append(predictions)
         labels.append(batch_labels)
+        
     return filter_negative_hundred(preds, labels)
 
 def validation_epoch_aug(model, val_dataloader):
@@ -189,8 +181,10 @@ def validation_epoch_aug(model, val_dataloader):
         preds_aug.append(predictions_aug)
 
         labels.append(batch_labels)
-        preds_normal , labels = filter_negative_hundred(preds_normal, labels)
-        preds_aug, labels = filter_negative_hundred(preds_aug, labels)
+        
+    preds_normal , ignored_labels = filter_negative_hundred(preds_normal, labels)
+    preds_aug, labels = filter_negative_hundred(preds_aug, labels)
+    assert len(preds_normal) ==len(preds_aug)==len(labels)
     return preds_normal,preds_aug,labels
 
 def get_dataloader(model_name, dataset, batch_size, shuffle=False):
@@ -274,8 +268,7 @@ def get_augmented_dataset(train_X,train_Y):
                 temp_pos = "A"
             if train_Y[i][j] in ["NN","NNS","NOUN"]:
                 temp_pos = "N"
-            # print("temp_pos: ", temp_pos)
-            # input("")
+            
             for s,synset in enumerate(wn.synsets(train_X[i][j])):
                 if s==0:
                     continue
@@ -311,15 +304,30 @@ def get_augmented_dataset(train_X,train_Y):
                 break
         
   return augmented_examples, augmented_labels
-
-augmented_ark_train_dataloader = get_augmented_dataloader(dataset="ark",partition="train",model="gpt2")
-
+# print("test aug datasets: \n")
+# augmented_tweebank_train_dataloader = get_augmented_dataloader(dataset="tweebank",partition="train",model="gpt2")
+# augmented_tpann_train_dataloader = get_augmented_dataloader(dataset="tpann",partition="train",model="gpt2")
+# for batch in augmented_tpann_train_dataloader:
+#     print("tpann")
+#     print(batch,"\n")
+#     print(batch["input_ids"].shape)
+#     print(batch["attention_mask"].shape)
+#     print(batch["labels"].shape)
+#     break
+# augmented_gum_train_dataloader = get_augmented_dataloader(dataset="gum",partition="train",model="gpt2")
+# for batch in augmented_gum_train_dataloader:
+#     print("gum")
+#     print(batch,"\n")
+#     print(batch["input_ids"].shape)
+#     print(batch["attention_mask"].shape)
+#     print(batch["labels"].shape)
+#     break
+# input("")
+# print("data loaded correctly!")
+# input("")
 
 def load_model(model_name, num_labels):
-    model = AutoModelForTokenClassification.from_pretrained(
-        model_name, num_labels=num_labels,
-        #ignore_mismatched_sizes=True # No warnings to clutter logs
-    )
+    model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
     return model.to(device)
 def training_loop_aug(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
     optimizer = AdamW(model.parameters(), lr=5e-5)
@@ -338,6 +346,10 @@ def training_loop_aug(model, train_dataloader, val_dataloader, dataset_name, n_e
         preds_normal,preds_aug, labels = validation_epoch_aug(model, val_dataloader)
         val_acc_normal = get_validation_acc(preds_normal, labels, dataset_name, dataset_name)
         val_acc_aug = get_validation_acc(preds_aug, labels, dataset_name, dataset_name)
+        print("val acc normal: ", val_acc_normal)
+        print("val acc aug: ", val_acc_aug,"\n")
+        
+        val_acc = (val_acc_normal + val_acc_aug) / 2
         val_accs.append((val_acc_normal + val_acc_aug) / 2 )
         if val_acc > best_val_acc:
             torch.save(model.state_dict(), save_path)
@@ -356,10 +368,10 @@ def training_loop_aug(model, train_dataloader, val_dataloader, dataset_name, n_e
 
 
 def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epochs, save_path):
-    optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
+    optimizer = AdamW(model.parameters(), lr=5e-5)
 
     lr_scheduler = get_scheduler(
-        name="cosine", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
+        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
     )
     val_accs = []
     torch.save(model.state_dict(), save_path)
@@ -389,8 +401,7 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
     model.load_state_dict(torch.load(save_path))  
     return model
 
-def pipeline(hparams):
-    run_aug = True
+def pipeline(hparams,run_aug=False):
     torch.cuda.empty_cache()
     train_dataset = get_dataset(hparams['dataset'], 'train')
     train_dataloader = get_dataloader(hparams['model_name'], train_dataset, hparams['batch_size'])
@@ -406,17 +417,17 @@ def pipeline(hparams):
     n_epochs = hparams['n_epochs']
     model = load_model(hparams['model_name'], num_labels)
     if run_aug:
-        train_dataloader = get_augmented_dataloader(dataset="ark",partition="train",model="gpt2") # added
+        train_dataloader = get_augmented_dataloader(dataset=hparams['dataset'],partition="train",model="gpt2") # added
         for batch in train_dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
-        val_dataloader = get_augmented_dataloader(dataset="ark",partition="dev",model="gpt2") # added
+        val_dataloader = get_augmented_dataloader(dataset=hparams['dataset'],partition="dev",model="gpt2") # added
         for batch in val_dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
         return training_loop_aug(model, train_dataloader, val_dataloader, hparams['dataset'], n_epochs, hparams['save_path'])
     return training_loop(model, train_dataloader, val_dataloader, hparams['dataset'], n_epochs, hparams['save_path'])
 
 
-def run_experiment():
+def run_experiment(run_aug=False):
     result_dict = dict()
     for model_name in model_names:
 
@@ -428,36 +439,33 @@ def run_experiment():
 
             hparams = {
                 'n_epochs': 10,
-                'batch_size': 8,
+                'batch_size': 32,
                 'dataset': train_dataset_name,
                 'model_name': model_name,
             }
             if not os.path.exists('models'):
                 os.mkdir('models')
-            hparams['save_path'] = os.path.join('models', "teacher_" + hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
-
+            hparams['save_path'] = os.path.join('models', hparams['model_name'].split('/')[-1] + "_" + hparams['dataset'])
             print(f"Training on: {train_dataset_name}, with model: {model_name}")
-            if not os.path.exists(hparams['save_path']):
-                trained_model = pipeline(hparams)
+            if run_aug:
+                trained_model = pipeline(hparams,run_aug=True)
             else:
-                dataset = get_dataset(train_dataset_name, 'train')
-                trained_model = load_model(model_name, dataset.num_labels)
-                trained_model.load_state_dict(torch.load(hparams['save_path']))
-
+                trained_model = pipeline(hparams)
             for test_dataset_name in dataset_names:
                 print(f"Validating: {test_dataset_name}, with model: {model_name}, trained on: {train_dataset_name}")
-                val_dataset = get_dataset(test_dataset_name, 'test')
+                val_dataset = get_dataset(test_dataset_name, 'val')
                 val_dataloader = get_dataloader(hparams['model_name'], val_dataset, hparams['batch_size'])
                 preds, labels = validation_epoch(trained_model, val_dataloader)
                 acc = get_validation_acc(preds, labels,  train_dataset_name, test_dataset_name)
-                print(f"Test Accuracy on {test_dataset_name}: {100 * acc :.3f}%")
+                print(f"Test Accuracy on {test_dataset_name}: {round(100*acc,3)}%")
                 result_dict[model_name][train_dataset_name][test_dataset_name] = 100*acc
+                torch.cuda.empty_cache()
 
     return result_dict
 
 def main():  
     print("Device: ", device)
-    results = run_experiment()
+    results = run_experiment(run_aug=True)
     # results = {'gpt2': {'tweebank': {'tweebank': 88.605, 'TPANN': 70.083, 'ark': 55.007}, 'TPANN': {'tweebank': 62.676, 'TPANN': 86.848, 'ark': 58.427}, 'ark': {'tweebank': 47.659, 'TPANN': 64.866, 'ark': 86.512}}, 'vinai/bertweet-large': {'tweebank': {'tweebank': 93.93, 'TPANN': 72.831, 'ark': 58.798}, 'TPANN': {'tweebank': 67.468, 'TPANN': 93.794, 'ark': 63.418}, 'ark': {'tweebank': 50.942, 'TPANN': 68.416, 'ark': 93.649}}, 'roberta-large': {'tweebank': {'tweebank': 92.997, 'TPANN': 71.411, 'ark': 57.999}, 'TPANN': {'tweebank': 71.133, 'TPANN': 92.837, 'ark': 63.047}, 'ark': {'tweebank': 52.045, 'TPANN': 67.397, 'ark': 92.689}}, 'bert-large-cased': {'tweebank': {'tweebank': 91.77, 'TPANN': 68.13, 'ark': 53.976}, 'TPANN': {'tweebank': 65.373, 'TPANN': 90.571, 'ark': 60.942}, 'ark': {'tweebank': 50.051, 'TPANN': 63.793, 'ark': 90.931}}}
     print(results)
     with open('model_out.pkl', 'wb') as f:

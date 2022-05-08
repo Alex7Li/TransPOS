@@ -253,7 +253,6 @@ def generate_mask_and_data(x_input,input_type,mid=None):
  
 
 # generate_mask(x,"attention")
-
 def get_dataloader(model_name, dataset, batch_size, shuffle=False):
     tokenizer = AutoTokenizer.from_pretrained(model_name, add_prefix_space=True, use_fast=True)
     if model_name == 'gpt2':
@@ -362,7 +361,7 @@ def get_augmented_dataloader(dataset="ark",partition="train",model="gpt2"):
         atis_aug_dataloader = get_dataloader(model,atis_aug_train,20,shuffle=False)
         return atis_aug_dataloader
     if dataset.lower()=="gum":
-        ain_y = data_reader(f"GUMDataset/en_gum-ud-{partition}.conllu")
+        gum_train_x, gum_train_y = data_reader(f"GUMDataset/en_gum-ud-{partition}.conllu")
         gum_aug_train_x,gum_aug_train_y = get_augmented_dataset(gum_train_x,gum_train_y)
         gum_aug_train = GUMAugDataset(gum_aug_train_x,gum_aug_train_y)
         gum_aug_dataloader = get_dataloader(model,gum_aug_train,20,shuffle=False)
