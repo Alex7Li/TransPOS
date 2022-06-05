@@ -386,117 +386,118 @@ if test_ark_aug:
         input("")
     print("data loader works!")
     # input("")
-test_tpann_aug = False
-if test_tpann_aug:
-    tpann_train, tpann_val, tpann_test = load_tpann()
-    tpann_train_x = []
-    tpann_train_raw_y =[]
-    for elem in tpann_train:
-        tpann_train_x.append(elem[0])
-        tpann_train_raw_y.append(elem[1].tolist())
-    TPANN_POS_TAGS = [':', 'VBZ', 'PRP$', 'WRB', 'MD', 'RB', 'NNS', 'DT', 'UH', 'VBG', ']', 'NN', 'URL', 'VBD', '.', 'VBP', 'POS', 'WP', 'RT', 'VB', 'HT', ')', 'VBN', 'PRP', 'TO', 'NNP', 'JJR', 'USR', 'RP', 'SYM', ',', 'JJ', 'O', 'CC', "''", 'CD', '(', 'PDT', 'IN', '[', 'WDT', 'JJS', 'RBR', 'NNPS', 'LS', 'RBS', 'FW', 'EX']
-    TPANN_POS_INDEX_MAPPING, TPANN_INDEX_POS_MAPPING = create_pos_mapping(TPANN_POS_TAGS)
-    tpann_train_y = []
-    for elem in tpann_train_raw_y:
-        ex = []
-        for index_ in elem:
-            candidate_mapping = TPANN_INDEX_POS_MAPPING[index_]
-            ex.append(candidate_mapping)
-        tpann_train_y.append(ex)
-    
-    tpann_aug_train_x, tpann_aug_train_y = get_augmented_dataset(tpann_train_x,tpann_train_y)
-    assert len(tpann_aug_train_x) == len(tpann_aug_train_y)
-    
-    tpann_aug_train = TPANNAugDataset(tpann_aug_train_x, tpann_aug_train_y)
-    tpann_aug_dataloader = get_dataloader("gpt2",tpann_aug_train,20,shuffle=False)
-    for batch in tpann_aug_dataloader:
-        batch = {k: v.to(device) for k, v in batch.items()}
-        print(batch)
-        break
-    print("data loader works!")
-    input("")
-test_atis= False
-if test_atis:
-    def data_reader(data_path):
-        """  Some useful info     
-                https://rdrr.io/cran/NLP/man/CoNLLUTextDocument.html
-                LEMMA (lemma or stem of word form), 
-                UPOSTAG (universal part-of-speech tag, see https://universaldependencies.org/u/pos/index.html), 
-                XPOSTAG (language-specific part-of-speech tag, may be 
-        """
-        with open(data_path, "r", encoding="utf-8") as data_file:
-            X = []
-            Y = []
-            for tokenlist in parse_incr(data_file):
-                X.append([])
-                Y.append([])
-                for token in tokenlist:
-                    X[-1].append(str(token))
-                    Y[-1].append(token['upos'])
-        return X, Y
-    atis_train_x, atis_train_y = data_reader("AtisDataset/en_atis-ud-train.conllu")
-    atis_aug_train_x,atis_aug_train_y = get_augmented_dataset(atis_train_x,atis_train_y)
-    atis_aug_train = AtisAugDataset(atis_aug_train_x,atis_aug_train_y)
-    atis_aug_dataloader = get_dataloader("gpt2",atis_aug_train,20,shuffle=False)
-    for batch in atis_aug_dataloader:
-        batch = {k: v.to(device) for k, v in batch.items()}
-        print(batch)
-        break
-    input("")
-test_gum = False
-if test_gum:
-    def data_reader(data_path):
-        """  Some useful info     
-                https://rdrr.io/cran/NLP/man/CoNLLUTextDocument.html
-                LEMMA (lemma or stem of word form), 
-                UPOSTAG (universal part-of-speech tag, see https://universaldependencies.org/u/pos/index.html), 
-                XPOSTAG (language-specific part-of-speech tag, may be 
-        """
-        with open(data_path, "r", encoding="utf-8") as data_file:
-            X = []
-            Y = []
-            for tokenlist in parse_incr(data_file):
-                X.append([])
-                Y.append([])
-                for token in tokenlist:
-                    X[-1].append(str(token))
-                    Y[-1].append(token['upos'])
-        return X, Y
-    gum_train_x, gum_train_y = data_reader("GUMDataset/en_gum-ud-train.conllu")
-    gum_aug_train_x,gum_aug_train_y = get_augmented_dataset(gum_train_x,gum_train_y)
-    gum_aug_train = GUMAugDataset(gum_aug_train_x,gum_aug_train_y)
-    gum_aug_dataloader = get_dataloader("gpt2",gum_aug_train,20,shuffle=False)
-    for batch in gum_aug_dataloader:
-        batch = {k: v.to(device) for k, v in batch.items()}
-        print(batch)
-        break
-    input("")
-test_twee = False
-if test_twee:
-    def data_reader(data_path):
-        """  Some useful info     
-                https://rdrr.io/cran/NLP/man/CoNLLUTextDocument.html
-                LEMMA (lemma or stem of word form), 
-                UPOSTAG (universal part-of-speech tag, see https://universaldependencies.org/u/pos/index.html), 
-                XPOSTAG (language-specific part-of-speech tag, may be 
-        """
-        with open(data_path, "r", encoding="utf-8") as data_file:
-            X = []
-            Y = []
-            for tokenlist in parse_incr(data_file):
-                X.append([])
-                Y.append([])
-                for token in tokenlist:
-                    X[-1].append(str(token))
-                    Y[-1].append(token['upos'])
-        return X, Y
-    twee_train_x, twee_train_y = data_reader("TweeBankDataset/Tweebank-dev/en-ud-tweet-train.conllu")
-    twee_aug_train_x,twee_aug_train_y = get_augmented_dataset(twee_train_x,twee_train_y)
-    twee_aug_train = TweebankAugTrain(twee_aug_train_x,twee_aug_train_y)
-    twee_aug_dataloader = get_dataloader("gpt2",twee_aug_train,20,shuffle=False)
-    for batch in twee_aug_dataloader:
-        batch = {k: v.to(device) for k, v in batch.items()}
-        print(batch)
-        break
-    print("twee dataloader works")
-    input("")
+if __name__ == "__main__":
+    test_tpann_aug = False
+    if test_tpann_aug:
+        tpann_train, tpann_val, tpann_test = load_tpann()
+        tpann_train_x = []
+        tpann_train_raw_y =[]
+        for elem in tpann_train:
+            tpann_train_x.append(elem[0])
+            tpann_train_raw_y.append(elem[1].tolist())
+        TPANN_POS_TAGS = [':', 'VBZ', 'PRP$', 'WRB', 'MD', 'RB', 'NNS', 'DT', 'UH', 'VBG', ']', 'NN', 'URL', 'VBD', '.', 'VBP', 'POS', 'WP', 'RT', 'VB', 'HT', ')', 'VBN', 'PRP', 'TO', 'NNP', 'JJR', 'USR', 'RP', 'SYM', ',', 'JJ', 'O', 'CC', "''", 'CD', '(', 'PDT', 'IN', '[', 'WDT', 'JJS', 'RBR', 'NNPS', 'LS', 'RBS', 'FW', 'EX']
+        TPANN_POS_INDEX_MAPPING, TPANN_INDEX_POS_MAPPING = create_pos_mapping(TPANN_POS_TAGS)
+        tpann_train_y = []
+        for elem in tpann_train_raw_y:
+            ex = []
+            for index_ in elem:
+                candidate_mapping = TPANN_INDEX_POS_MAPPING[index_]
+                ex.append(candidate_mapping)
+            tpann_train_y.append(ex)
+        
+        tpann_aug_train_x, tpann_aug_train_y = get_augmented_dataset(tpann_train_x,tpann_train_y)
+        assert len(tpann_aug_train_x) == len(tpann_aug_train_y)
+        
+        tpann_aug_train = TPANNAugDataset(tpann_aug_train_x, tpann_aug_train_y)
+        tpann_aug_dataloader = get_dataloader("gpt2",tpann_aug_train,20,shuffle=False)
+        for batch in tpann_aug_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            print(batch)
+            break
+        print("data loader works!")
+        input("")
+    test_atis= False
+    if test_atis:
+        def data_reader(data_path):
+            """  Some useful info     
+                    https://rdrr.io/cran/NLP/man/CoNLLUTextDocument.html
+                    LEMMA (lemma or stem of word form), 
+                    UPOSTAG (universal part-of-speech tag, see https://universaldependencies.org/u/pos/index.html), 
+                    XPOSTAG (language-specific part-of-speech tag, may be 
+            """
+            with open(data_path, "r", encoding="utf-8") as data_file:
+                X = []
+                Y = []
+                for tokenlist in parse_incr(data_file):
+                    X.append([])
+                    Y.append([])
+                    for token in tokenlist:
+                        X[-1].append(str(token))
+                        Y[-1].append(token['upos'])
+            return X, Y
+        atis_train_x, atis_train_y = data_reader("AtisDataset/en_atis-ud-train.conllu")
+        atis_aug_train_x,atis_aug_train_y = get_augmented_dataset(atis_train_x,atis_train_y)
+        atis_aug_train = AtisAugDataset(atis_aug_train_x,atis_aug_train_y)
+        atis_aug_dataloader = get_dataloader("gpt2",atis_aug_train,20,shuffle=False)
+        for batch in atis_aug_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            print(batch)
+            break
+        input("")
+    test_gum = False
+    if test_gum:
+        def data_reader(data_path):
+            """  Some useful info     
+                    https://rdrr.io/cran/NLP/man/CoNLLUTextDocument.html
+                    LEMMA (lemma or stem of word form), 
+                    UPOSTAG (universal part-of-speech tag, see https://universaldependencies.org/u/pos/index.html), 
+                    XPOSTAG (language-specific part-of-speech tag, may be 
+            """
+            with open(data_path, "r", encoding="utf-8") as data_file:
+                X = []
+                Y = []
+                for tokenlist in parse_incr(data_file):
+                    X.append([])
+                    Y.append([])
+                    for token in tokenlist:
+                        X[-1].append(str(token))
+                        Y[-1].append(token['upos'])
+            return X, Y
+        gum_train_x, gum_train_y = data_reader("GUMDataset/en_gum-ud-train.conllu")
+        gum_aug_train_x,gum_aug_train_y = get_augmented_dataset(gum_train_x,gum_train_y)
+        gum_aug_train = GUMAugDataset(gum_aug_train_x,gum_aug_train_y)
+        gum_aug_dataloader = get_dataloader("gpt2",gum_aug_train,20,shuffle=False)
+        for batch in gum_aug_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            print(batch)
+            break
+        input("")
+    test_twee = False
+    if test_twee:
+        def data_reader(data_path):
+            """  Some useful info     
+                    https://rdrr.io/cran/NLP/man/CoNLLUTextDocument.html
+                    LEMMA (lemma or stem of word form), 
+                    UPOSTAG (universal part-of-speech tag, see https://universaldependencies.org/u/pos/index.html), 
+                    XPOSTAG (language-specific part-of-speech tag, may be 
+            """
+            with open(data_path, "r", encoding="utf-8") as data_file:
+                X = []
+                Y = []
+                for tokenlist in parse_incr(data_file):
+                    X.append([])
+                    Y.append([])
+                    for token in tokenlist:
+                        X[-1].append(str(token))
+                        Y[-1].append(token['upos'])
+            return X, Y
+        twee_train_x, twee_train_y = data_reader("TweeBankDataset/Tweebank-dev/en-ud-tweet-train.conllu")
+        twee_aug_train_x,twee_aug_train_y = get_augmented_dataset(twee_train_x,twee_train_y)
+        twee_aug_train = TweebankAugTrain(twee_aug_train_x,twee_aug_train_y)
+        twee_aug_dataloader = get_dataloader("gpt2",twee_aug_train,20,shuffle=False)
+        for batch in twee_aug_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            print(batch)
+            break
+        print("twee dataloader works")
+        input("")

@@ -13,6 +13,7 @@ import os
 import pandas as pd
 import pickle
 import itertools
+from pseudolabels import MergedDataset
 from transformers import DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer, BertForTokenClassification, AutoTokenizer, get_scheduler
 from functools import partial
 from tqdm import tqdm as std_tqdm
@@ -29,15 +30,14 @@ from TPANNDataset.load_tpann import load_tpann
 from TweeBankDataset.load_tweebank import load_tweebank
 from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
-import nltk
 from augmented_datasets import ArkAugDataset,TPANNAugDataset,AtisAugDataset,GUMAugDataset,TweebankAugTrain,get_augmented_dataloader,generate_mask_and_data
-# nltk.data.path.append('/home/ubuntu/SemiTPOT/nltk_data')
-# nltk.download('punkt')
-# nltk.download('wordnet')
-from nltk.corpus import wordnet as wn
-import spacy
-from dataloading_utils import create_pos_mapping
-from conllu import parse_incr
+def download_datasets():
+    import nltk
+    nltk.data.path.append('/home/ubuntu/SemiTPOT/nltk_data')
+    nltk.download('punkt')
+    nltk.download('wordnet')
+    from nltk.corpus import wordnet as wn
+    import spacy
 from augmented_datasets import get_augmented_dataloader
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -46,9 +46,6 @@ tpann_train, tpann_val, tpann_test = load_tpann()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 atis_train, atis_val, atis_test = load_atis()
 gum_train, gum_val, gum_test = load_gum()
-def download_wordnet():
-    nltk.download('wordnet')
-    from nltk.corpus import wordnet as wn
 
 model_names = [
     'gpt2',
@@ -78,6 +75,7 @@ def train_epoch(model, train_dataloader, optimizer, scheduler):
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
+
 def train_epoch_aug(model, train_dataloader, optimizer, scheduler):
     model.train()
     mse_loss = nn.MSELoss()
@@ -192,7 +190,7 @@ def validation_epoch_aug(model, val_dataloader):
     assert len(preds_normal) ==len(preds_aug)==len(labels)
     return preds_normal,preds_aug,labels
 
-def get_dataloader(model_name, dataset, batch_size, shuffle=False):
+def get_dataloader(model_name:str, dataset, batch_size, shuffle=False):
     tokenizer = AutoTokenizer.from_pretrained(model_name, add_prefix_space=True, use_fast=True, model_max_length=512)
     if model_name == 'gpt2':
         tokenizer.pad_token = tokenizer.eos_token
@@ -202,10 +200,9 @@ def get_dataloader(model_name, dataset, batch_size, shuffle=False):
     return dataloader
 
 
-      
 
 def get_dataset(dataset_name, partition):
-    assert partition in {'train', 'val', 'test'}
+    assert partition in {'train', 'val', 'test', 'all'}
     if partition == 'train':
         if dataset_name == 'tweebank':
             dataset = tweebank_train
@@ -245,6 +242,12 @@ def get_dataset(dataset_name, partition):
             dataset = gum_test
         else:
             raise NotImplementedError
+    elif partition == 'all':
+        return MergedDataset(
+            get_dataset(dataset_name, 'train'),
+            get_dataset(dataset_name, 'val'),
+            get_dataset(dataset_name, 'test')
+        )
     else:
         raise NotImplementedError
     return dataset
@@ -338,7 +341,7 @@ def training_loop_aug(model, train_dataloader, val_dataloader, dataset_name, n_e
     optimizer = AdamW(model.parameters(), lr=5e-5)
 
     lr_scheduler = get_scheduler(
-        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
+        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=len(train_dataloader)*n_epochs
     )
     val_accs = []
     torch.save(model.state_dict(), save_path)
@@ -376,7 +379,7 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
     optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
 
     lr_scheduler = get_scheduler(
-        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=get_num_examples(train_dataloader)*n_epochs
+        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=len(train_dataloader)*n_epochs
     )
     val_accs = []
     torch.save(model.state_dict(), save_path)
@@ -389,7 +392,7 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
             train_epoch_aug(model, train_dataloader, optimizer, lr_scheduler) # added
         else:
             train_epoch(model, train_dataloader, optimizer, lr_scheduler)
-    
+
         preds, labels = validation_epoch(model, val_dataloader)
         val_acc = get_validation_acc(preds, labels, dataset_name, dataset_name)
         val_accs.append(val_acc)
@@ -399,7 +402,7 @@ def training_loop(model, train_dataloader, val_dataloader, dataset_name, n_epoch
         if val_acc < .2:
             print(f"Model collapsed, restarting from last epoch.")
             model.load_state_dict(torch.load(save_path))  
-        
+
     if n_epochs > 1:
         # Make ranadeep happy
         plt.xlabel('epoch')
@@ -469,7 +472,10 @@ def run_experiment(run_aug=False):
 
 def main():  
     print("Device: ", device)
-    results = run_experiment(run_aug=True)
+    run_aug = False
+    if run_aug:
+        download_datasets()
+    results = run_experiment(run_aug=run_aug)
     # results = {'gpt2': {'tweebank': {'tweebank': 88.605, 'TPANN': 70.083, 'ark': 55.007}, 'TPANN': {'tweebank': 62.676, 'TPANN': 86.848, 'ark': 58.427}, 'ark': {'tweebank': 47.659, 'TPANN': 64.866, 'ark': 86.512}}, 'vinai/bertweet-large': {'tweebank': {'tweebank': 93.93, 'TPANN': 72.831, 'ark': 58.798}, 'TPANN': {'tweebank': 67.468, 'TPANN': 93.794, 'ark': 63.418}, 'ark': {'tweebank': 50.942, 'TPANN': 68.416, 'ark': 93.649}}, 'roberta-large': {'tweebank': {'tweebank': 92.997, 'TPANN': 71.411, 'ark': 57.999}, 'TPANN': {'tweebank': 71.133, 'TPANN': 92.837, 'ark': 63.047}, 'ark': {'tweebank': 52.045, 'TPANN': 67.397, 'ark': 92.689}}, 'bert-large-cased': {'tweebank': {'tweebank': 91.77, 'TPANN': 68.13, 'ark': 53.976}, 'TPANN': {'tweebank': 65.373, 'TPANN': 90.571, 'ark': 60.942}, 'ark': {'tweebank': 50.051, 'TPANN': 63.793, 'ark': 90.931}}}
     print(results)
     with open('model_out.pkl', 'wb') as f:
