@@ -20,8 +20,9 @@ from tqdm import tqdm
 import pickle
 import torch.utils.data
 from torch.optim import AdamW
+from dataloading_utils import MergedDataset
 from transformers import AutoTokenizer
-from dataloading_utils import filter_negative_hundred, get_validation_acc
+from dataloading_utils import get_validation_acc
 
 batch_size = 12
 
@@ -44,31 +45,6 @@ class PseudoDataset(torch.utils.data.Dataset):
         Y = torch.as_tensor(Y, dtype=torch.long, device=self.device)
         return X, Y
 
-
-class MergedDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset1, dataset2, dataset3=None):
-        self.dataset1 = dataset1
-        self.dataset2 = dataset2
-        self.dataset3 = dataset3
-        self.L1 = len(self.dataset1)
-        self.L2 = len(self.dataset2)
-        self.L3 = 0 if dataset3 == None else len(self.dataset3)
-        self.total_len = self.L1 + self.L2 + self.L3
-        self.num_labels = None
-        if self.dataset1.num_labels == self.dataset2.num_labels:
-            if self.dataset3 is None or self.dataset1.num_labels == self.dataset3.num_labels:
-                self.num_labels = self.dataset1.num_labels
-
-    def __len__(self):
-        return self.total_len
-
-    def __getitem__(self, ind):
-        if ind < self.L1:
-            return self.dataset1[ind]
-        elif ind < self.L1 + self.L2:
-            return self.dataset2[ind - self.L1]
-        else:
-            return self.dataset3[ind - self.L1 -self.L2]
 
 
 def train_teacher(model_name, dataset_name, save_path):

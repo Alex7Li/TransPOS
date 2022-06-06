@@ -1,6 +1,7 @@
 import torch
 from typing import Union
 
+
 class MapperModel(torch.nn.Module):
     def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int):
         self.base_transformer_name = base_transformer_name
@@ -28,4 +29,3 @@ class MapperModel(torch.nn.Module):
         z: integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
         ...
-
