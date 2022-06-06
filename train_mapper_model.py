@@ -1,4 +1,3 @@
-from torchmetrics import KLDivergence
 from augmented_datasets import get_dataloader
 from mapper_model import MapperModel
 import dataloading_utils
@@ -6,8 +5,10 @@ from dataloading_utils import TransformerCompatDataset
 import torch
 from tqdm import tqdm
 import training
+from typing import Tuple
 from pathlib import Path
-from EncoderDecoderDataloaders import TweebankArkDataset, create_tweebank_ark_dataset
+import numpy as np
+from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 from transformers import get_scheduler
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,9 +26,11 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     decode_z = model.decode_z if input_label == "y" else model.decode_y
 
     batch = {k: v.to(device) for k, v in batch.items()}
-    e_y = model.encode(batch["output"])
-    y_tilde = decode_y(e_y, batch["labels"])
-    y_tilde = decode_z(e_y, y_tilde)
+    labels = batch["labels"]
+    del batch["labels"]
+    e_y = model.encode(batch)
+    z_tilde = decode_y(e_y, labels)
+    y_tilde = decode_z(e_y, z_tilde)
     loss = torch.nn.KLDivLoss()  # This line might be wrong
     return loss(y_tilde, batch["labels"])
 
@@ -45,29 +48,63 @@ def train_epoch(
     sum_train_loss = 0
     # Iterate until either dataset is exhausted.
     for i in tqdm(range(n_iters), desc="Epoch progress", mininterval=5):
-        loss = compose_loss(y_dataloader[i], model, "y")
-        loss += compose_loss(z_dataloader[i], model, "z")
-        loss.backward()
-        sum_train_loss = loss.detach()
-        optimizer.step()
-        scheduler.step()
-        optimizer.zero_grad()
+        for batch_y, batch_z in zip(y_dataloader, z_dataloader):
+            loss = compose_loss(batch_y, model, "y")
+            loss += compose_loss(batch_z, model, "z")
+            loss.backward()
+            sum_train_loss = loss.detach()
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
     return sum_train_loss / n_iters
 
 
-def validation_acc(model: MapperModel, shared_val_dataset) -> float:
+def get_validation_predictions(model: MapperModel, shared_val_set):
     model.eval()
-    y_dataset, z_dataset = shared_val_dataset
-    for (x, y), (x, z) in tqdm(
-        zip(y_dataset, z_dataset),
-        desc="Validation",
+    y_dataset, z_dataset = shared_val_set
+    batch_size = 32
+    y_dataloader = training.get_dataloader(
+        model.base_transformer_name, y_dataset, batch_size, shuffle=True
+    )
+    z_dataloader = training.get_dataloader(
+        model.base_transformer_name, z_dataset, batch_size, shuffle=True
+    )
+    predicted_y = []
+    predicted_z = []
+    for y_batch, z_batch in tqdm(
+        zip(y_dataloader, z_dataloader),
+        desc="Predicting Validation labels",
         mininterval=5,
-        total=len(y_dataset),
+        total=len(y_dataloader),
     ):
-        e_y = model.encode(x)
+        e = model.encode(y_batch)
+        z_pred = torch.argmax(model.decode_y(e, y_batch['labels'].to(device)), dim=2).flatten()
+        y_pred = torch.argmax(model.decode_z(e, z_batch['labels'].to(device)), dim=2).flatten()
+        predicted_z.append(z_pred)
+        predicted_y.append(y_pred)
+    return np.stack(predicted_y, axis=0), np.stack(predicted_z, axis=0)
 
-        predictions = model()
-    return 0
+def get_validation_shared(y_predictions: np.ndarray, z_predictions: np.ndarray, shared_val_datasets) -> Tuple[float, float]:
+    """
+    Get the validation accuracy from the predictions.
+    y_predictions[i]: The predicted y labels for the ith element of the valdation dataloader
+    z_predictions[i]: The predicted z labels for the jth element of the valdation dataloader
+    shared_val_dataloaders: A tuple (y_dataloader, z_dataloader)
+    """
+    y_correct = 0
+    z_correct = 0
+    n_examples = len(shared_val_datasets[0])
+    total = 0
+    for i in range(n_examples):
+        y_correct += np.sum(y_predictions[i] == shared_val_datasets[0][i] & shared_val_datasets[0][i] != -100)
+        z_correct += np.sum(z_predictions[i] == shared_val_datasets[1][i] & shared_val_datasets[1][i] != -100)
+        total += np.sum(shared_val_datasets[1][i] != -100)
+    return y_correct / total, z_correct / total
+
+
+def model_validation_acc(model: MapperModel, shared_val_dataset) -> Tuple[float, float]:
+    predicted_y, predicted_z = get_validation_predictions(model, shared_val_dataset)
+    return get_validation_shared(predicted_y, predicted_z, shared_val_dataset)
 
 
 def train_model(
@@ -87,14 +124,20 @@ def train_model(
     )
     best_validation_acc = 0
     valid_acc = 0
+    if shared_val_dataset is not None:
+        # Test
+        valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
     for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs", maxinterval=50):
         train_loss = train_epoch(
             y_dataloader, z_dataloader, model, optimizer, scheduler
         )
+        print(f"Train KL Loss: {train_loss}")
         if shared_val_dataset is not None:
-            valid_acc = validation_acc(model, shared_val_dataset)
-        print(f"Train loss {train_loss}, Validation acc {valid_acc}")
+            valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
+            valid_acc = np.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
+            print(f"Val Acc Y: {valid_acc_y} Val Acc Z {valid_acc_z} ", end=None)
         if valid_acc >= best_validation_acc:
+            best_validation_acc = valid_acc
             torch.save(model.state_dict(), save_path)
     return model
 
@@ -117,8 +160,8 @@ def main(y_dataset_name, z_dataset_name, model_name):
         "vinai/bertweet-large", y_dataset.num_labels, z_dataset.num_labels
     )
     shared_val_dataset = None
-    if y_dataset == "tweebank" and z_dataset == "ark":
-        shared_val_dataset = create_tweebank_ark_dataset
+    if y_dataset_name == "tweebank" and z_dataset_name == "ark":
+        shared_val_dataset = create_tweebank_ark_dataset()
     train_model(
         model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path
     )

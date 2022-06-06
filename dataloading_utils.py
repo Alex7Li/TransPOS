@@ -2,7 +2,6 @@ from typing import *
 import torch
 import torch.utils.data
 from TweeBankDataset.load_tweebank import TWEEBANK_POS_MAPPING
-from AtisDataset.load_atis import ATIS_POS_MAPPING
 
 PYTORCH_IGNORE_INDEX = (
     -100

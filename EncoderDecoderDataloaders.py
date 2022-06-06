@@ -8,7 +8,10 @@ import warnings
 from ArkDataset.load_ark import load_ark
 from TPANNDataset.load_tpann import load_tpann
 from TweeBankDataset.load_tweebank import load_tweebank
-
+import os
+import numpy as np
+from dataloading_utils import TransformerCompatDataset
+from transformers import AutoTokenizer
 
 def main():
     tpann_train, tpann_val, tpann_test = load_tpann()
@@ -19,13 +22,17 @@ def main():
 def get_shared_examples(ark_all, tweebank_all):
     """Takes as input all examples from ark and twee bank, then returns a list of shared examples of the format
     [shared_x,ark_label,twee_label]"""
-    shared_examples = []
-    for ark in tqdm(ark_all, desc="Finding shared examples"):
-        for twee in tweebank_all:
-            if ark[0] == twee[0]:
-                shared_examples.append([])
-                shared_examples[-1].extend([ark[0], ark[1], twee[1]])
-    print("Number of shared Examples: ", len(shared_examples))
+    if os.path.exists('shared_ark_tweebank.npy'):
+        shared_examples = np.load('shared_ark_tweebank.npy', allow_pickle=True)
+    else:
+        shared_examples = []
+        for ark in tqdm(ark_all, desc="Finding shared examples"):
+            for twee in tweebank_all:
+                if ark[0] == twee[0]:
+                    shared_examples.append([])
+                    shared_examples[-1].extend([ark[0], ark[1].cpu(), twee[1].cpu()])
+        print("Number of shared Examples: ", len(shared_examples))
+        np.save('shared_ark_tweebank', shared_examples)
     return shared_examples
 
 
