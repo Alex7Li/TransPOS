@@ -1,13 +1,14 @@
 from augmented_datasets import get_dataloader
 from mapper_model import MapperModel
 import dataloading_utils
-from dataloading_utils import TransformerCompatDataset
+from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
 import torch
 from tqdm import tqdm
 import training
 from typing import Tuple
 from pathlib import Path
 import numpy as np
+from typing import List
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 from transformers import get_scheduler
 
@@ -64,47 +65,35 @@ def get_validation_predictions(model: MapperModel, shared_val_set):
     y_dataset, z_dataset = shared_val_set
     batch_size = 32
     y_dataloader = training.get_dataloader(
-        model.base_transformer_name, y_dataset, batch_size, shuffle=True
+        model.base_transformer_name, y_dataset, batch_size, shuffle=False
     )
     z_dataloader = training.get_dataloader(
-        model.base_transformer_name, z_dataset, batch_size, shuffle=True
+        model.base_transformer_name, z_dataset, batch_size, shuffle=False
     )
     predicted_y = []
     predicted_z = []
+    labels_y = []
+    labels_z = []
     for y_batch, z_batch in tqdm(
         zip(y_dataloader, z_dataloader),
         desc="Predicting Validation labels",
         mininterval=5,
         total=len(y_dataloader),
     ):
+        labels_y.append(y_batch['labels'])
+        labels_z.append(z_batch['labels'])
         e = model.encode(y_batch)
-        z_pred = torch.argmax(model.decode_y(e, y_batch['labels'].to(device)), dim=2).flatten()
-        y_pred = torch.argmax(model.decode_z(e, z_batch['labels'].to(device)), dim=2).flatten()
+        z_pred = torch.argmax(model.decode_y(e, labels_y[-1].to(device)), dim=2)
+        y_pred = torch.argmax(model.decode_z(e, labels_z[-1].to(device)), dim=2)
         predicted_z.append(z_pred)
         predicted_y.append(y_pred)
-    return np.stack(predicted_y, axis=0), np.stack(predicted_z, axis=0)
-
-def get_validation_shared(y_predictions: np.ndarray, z_predictions: np.ndarray, shared_val_datasets) -> Tuple[float, float]:
-    """
-    Get the validation accuracy from the predictions.
-    y_predictions[i]: The predicted y labels for the ith element of the valdation dataloader
-    z_predictions[i]: The predicted z labels for the jth element of the valdation dataloader
-    shared_val_dataloaders: A tuple (y_dataloader, z_dataloader)
-    """
-    y_correct = 0
-    z_correct = 0
-    n_examples = len(shared_val_datasets[0])
-    total = 0
-    for i in range(n_examples):
-        y_correct += np.sum(y_predictions[i] == shared_val_datasets[0][i] & shared_val_datasets[0][i] != -100)
-        z_correct += np.sum(z_predictions[i] == shared_val_datasets[1][i] & shared_val_datasets[1][i] != -100)
-        total += np.sum(shared_val_datasets[1][i] != -100)
-    return y_correct / total, z_correct / total
-
+    return flatten_preds_and_labels(predicted_y, labels_y), flatten_preds_and_labels(predicted_z, labels_z)
 
 def model_validation_acc(model: MapperModel, shared_val_dataset) -> Tuple[float, float]:
-    predicted_y, predicted_z = get_validation_predictions(model, shared_val_dataset)
-    return get_validation_shared(predicted_y, predicted_z, shared_val_dataset)
+    (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(model, shared_val_dataset)
+    y_acc = dataloading_utils.get_acc(y_preds, y_labels)
+    z_acc = dataloading_utils.get_acc(z_preds, z_labels)
+    return y_acc, z_acc
 
 
 def train_model(
@@ -142,14 +131,15 @@ def train_model(
     return model
 
 
+
 def main(y_dataset_name, z_dataset_name, model_name):
     batch_size = 32
     n_epochs = 5
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )
-    y_dataset = training.get_dataset(y_dataset_name, "all")
-    z_dataset = training.get_dataset(z_dataset_name, "all")
+    y_dataset = training.get_dataset(y_dataset_name, "unshared")
+    z_dataset = training.get_dataset(z_dataset_name, "unshared")
     y_dataloader = training.get_dataloader(
         model_name, y_dataset, batch_size, shuffle=True
     )

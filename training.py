@@ -24,7 +24,7 @@ from torch.optim import AdamW
 import torch.nn as nn
 from typing import *
 from dataloading_utils import (
-    filter_negative_hundred,
+    flatten_preds_and_labels,
     TransformerCompatDataset,
     get_validation_acc,
     MergedDataset
@@ -38,6 +38,7 @@ from augmented_datasets import (
     get_augmented_dataloader,
     generate_mask_and_data,
 )
+from EncoderDecoderDataloaders import UnsharedDataset
 
 
 def download_datasets():
@@ -187,8 +188,7 @@ def validation_epoch(model, val_dataloader):
         predictions = torch.argmax(logits, dim=-1)
         preds.append(predictions)
         labels.append(batch_labels)
-
-    return filter_negative_hundred(preds, labels)
+    return flatten_preds_and_labels(preds, labels)
 
 
 def validation_epoch_aug(model, val_dataloader):
@@ -233,8 +233,8 @@ def validation_epoch_aug(model, val_dataloader):
 
         labels.append(batch_labels)
 
-    preds_normal, ignored_labels = filter_negative_hundred(preds_normal, labels)
-    preds_aug, labels = filter_negative_hundred(preds_aug, labels)
+    preds_normal, ignored_labels = flatten_preds_and_labels(preds_normal, labels)
+    preds_aug, labels = flatten_preds_and_labels(preds_aug, labels)
     assert len(preds_normal) == len(preds_aug) == len(labels)
     return preds_normal, preds_aug, labels
 
@@ -254,7 +254,7 @@ def get_dataloader(model_name: str, dataset, batch_size, shuffle=False):
 
 
 def get_dataset(dataset_name, partition):
-    assert partition in {"train", "val", "test", "all"}
+    assert partition in {"train", "val", "test", "unshared"}
     if partition == "train":
         if dataset_name == "tweebank":
             dataset = tweebank_train
@@ -294,12 +294,12 @@ def get_dataset(dataset_name, partition):
             dataset = gum_test
         else:
             raise NotImplementedError
-    elif partition == "all":
-        return MergedDataset(
+    elif partition == "unshared":
+        return UnsharedDataset(MergedDataset(
             get_dataset(dataset_name, "train"),
             get_dataset(dataset_name, "val"),
             get_dataset(dataset_name, "test"),
-        )
+        ))
     else:
         raise NotImplementedError
     return dataset
@@ -513,19 +513,25 @@ def training_loop(
     return model
 
 
-def pipeline(hparams, run_aug=False):
+def pipeline(hparams, run_aug=False, load_weights=False, use_unshared=False):
     torch.cuda.empty_cache()
-    train_dataset = get_dataset(hparams["dataset"], "train")
+    if use_unshared:
+        train_dataset = get_dataset(hparams["dataset"], "unshared")
+    else:
+        train_dataset = get_dataset(hparams["dataset"], "train")
+    val_dataset = get_dataset(hparams["dataset"], "val")
     train_dataloader = get_dataloader(
         hparams["model_name"], train_dataset, hparams["batch_size"]
     )
-    val_dataset = get_dataset(hparams["dataset"], "val")
     val_dataloader = get_dataloader(
         hparams["model_name"], val_dataset, hparams["batch_size"]
     )
     num_labels = train_dataset.num_labels
     n_epochs = hparams["n_epochs"]
     model = load_model(hparams["model_name"], num_labels)
+    if load_weights and os.path.exists(hparams["save_path"]):
+        model.load_state_dict(torch.load(hparams["save_path"]))
+        return model
     if run_aug:
         train_dataloader = get_augmented_dataloader(
             dataset=hparams["dataset"], partition="train", model="gpt2"
@@ -553,6 +559,7 @@ def pipeline(hparams, run_aug=False):
         n_epochs,
         hparams["save_path"],
     )
+
 
 
 def run_experiment(run_aug=False):

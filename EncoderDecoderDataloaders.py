@@ -37,16 +37,14 @@ def get_shared_examples(ark_all, tweebank_all):
 
 
 class ArkSharedDataset(torch.utils.data.Dataset):
-    def __init__(self, shared_examples, test=False):
+    def __init__(self, shared_examples):
         self.shared_examples = shared_examples
+        self.num_labels = 25
         self.X = []
         self.Y = []
         for ex in shared_examples:
             self.X.append(ex[0])
             self.Y.append(ex[1])
-        if test:
-            self.X = self.X[-50:]
-            self.Y = self.Y[-50:]
         assert len(self.X) == len(self.Y)
 
     def __len__(self):
@@ -59,16 +57,14 @@ class ArkSharedDataset(torch.utils.data.Dataset):
 
 
 class TweeSharedDataset(torch.utils.data.Dataset):
-    def __init__(self, shared_examples, test=False):
+    def __init__(self, shared_examples):
         self.shared_examples = shared_examples
+        self.num_labels = 17
         self.X = []
         self.Y = []
         for ex in shared_examples:
             self.X.append(ex[0])
             self.Y.append(ex[2])
-        if test:
-            self.X = self.X[-50:]
-            self.Y = self.Y[-50:]
         assert len(self.X) == len(self.Y)
 
     def __len__(self):
@@ -79,18 +75,40 @@ class TweeSharedDataset(torch.utils.data.Dataset):
         y = self.Y[ind]
         return x, y
 
+class UnsharedDataset(torch.utils.data.Dataset):
+    def __init__(self, full_dataset):
+        self.full_dataset = full_dataset
+        self.num_labels = full_dataset.num_labels
+        shared_x = [x for x,y,z in shared_examples]
+        self.index_map = []
+        for i, (x, y) in tqdm(enumerate(full_dataset), desc="Creating unshared dataset"):
+            is_in_shared = False
+            for sx in shared_x:
+                if x == sx:
+                    is_in_shared = True
+                    shared_x.remove(x)
+                    break
+            if not is_in_shared:
+                self.index_map.append(i)
+        assert len(shared_x) == 0
+
+    def __len__(self):
+        return len(self.index_map)
+
+    def __getitem__(self, ind):
+        return self.full_dataset[self.index_map[ind]]
 
 def create_tweebank_ark_dataset():
-    ark_train, ark_val, ark_test = load_ark()
-    tweebank_train, tweebank_val, tweebank_test = load_tweebank()
-    ark_all = ark_train + ark_val + ark_test
-    tweebank_all = tweebank_train + tweebank_val + tweebank_test
-    shared_examples = get_shared_examples(ark_all, tweebank_all)
     ark_shared_dataset = ArkSharedDataset(shared_examples)
     twee_shared_dataset = TweeSharedDataset(shared_examples)
     assert len(ark_shared_dataset) == len(twee_shared_dataset)
     return twee_shared_dataset, ark_shared_dataset
 
 
+ark_train, ark_val, ark_test = load_ark()
+tweebank_train, tweebank_val, tweebank_test = load_tweebank()
+ark_all = ark_train + ark_val + ark_test
+tweebank_all = tweebank_train + tweebank_val + tweebank_test
+shared_examples = get_shared_examples(ark_all, tweebank_all)
 if __name__ == "__main__":
     main()

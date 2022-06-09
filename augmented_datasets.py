@@ -12,7 +12,7 @@ from AtisDataset.load_atis import load_atis
 from GUMDataset.load_GUM import load_gum
 from nltk.corpus import wordnet as wn
 from dataloading_utils import (
-    filter_negative_hundred,
+    flatten_preds_and_labels,
     TransformerCompatDataset,
     get_num_examples,
     get_validation_acc,

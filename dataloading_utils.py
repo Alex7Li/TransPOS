@@ -152,7 +152,7 @@ def map_labels_to_twee(pos_tags, mapping):
     return [mapping[tag] for tag in pos_tags]
 
 
-def filter_negative_hundred(preds, labels):
+def flatten_preds_and_labels(preds, labels):
     """
     Flatten a list of tensors
     --------------------------
