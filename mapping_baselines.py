@@ -5,11 +5,11 @@ import dataloading_utils
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 
 
-def normal_model_baseline(train_dataset_name, predict_dataset_name, model_name):
+def normal_model_baseline(train_dataset_name, model_name):
     (twee_shared, ark_shared) = create_tweebank_ark_dataset()
-    if predict_dataset_name == 'ark':
+    if train_dataset_name == 'ark':
         val_dataset = ark_shared
-    elif predict_dataset_name == 'tweebank':
+    elif train_dataset_name == 'tweebank':
         val_dataset = twee_shared
     else:
         raise NotImplementedError
@@ -23,7 +23,7 @@ def normal_model_baseline(train_dataset_name, predict_dataset_name, model_name):
         "models",
         hparams["model_name"].split("/")[-1] + "_" + hparams["dataset"],
     )
-    trained_model = training.pipeline(hparams, load_weights=False,
+    trained_model = training.pipeline(hparams, load_weights=True,
         use_unshared=True)
     val_dataloader = training.get_dataloader(
         model_name, val_dataset, hparams["batch_size"], shuffle=False
@@ -34,12 +34,12 @@ def normal_model_baseline(train_dataset_name, predict_dataset_name, model_name):
     return dataloading_utils.get_acc(preds, labels)
 
 # 3 Epochs:
-# Accuracy on tweebank: 0.6228 On ark: 0.5783
+# Accuracy on tweebank: 94.1281% On ark: 93.5943%
 def main_normal_model():
-  ark_acc = normal_model_baseline("tweebank", "ark", "vinai/bertweet-large")
-  print(f"Accuracy on ark: {100*ark_acc:.4f}")
-  twee_acc = normal_model_baseline("ark", "tweebank", "vinai/bertweet-large")
-  print(f"Accuracy on tweebank: {100*twee_acc:.4f}")
+  ark_acc = normal_model_baseline("tweebank", "vinai/bertweet-large")
+  print(f"Accuracy on ark: {100*ark_acc:.4f}%")
+  twee_acc = normal_model_baseline("ark", "vinai/bertweet-large")
+  print(f"Accuracy on tweebank: {100*twee_acc:.4f}%")
 
 if __name__ == '__main__':
   main_normal_model()
