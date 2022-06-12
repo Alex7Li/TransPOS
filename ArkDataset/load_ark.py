@@ -25,7 +25,7 @@ def read_ark_file(file_path: str) -> Tuple[List[List[str]], List[List[str]]]:
 
     Y: The POS tags in the data file
     """
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         lines = f.read().splitlines()
         lines = [line.split("\t") for line in lines]
         X = [[]]

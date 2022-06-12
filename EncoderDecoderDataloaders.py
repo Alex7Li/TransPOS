@@ -12,18 +12,28 @@ import os
 import numpy as np
 from dataloading_utils import TransformerCompatDataset
 from transformers import AutoTokenizer
-
+import pickle
+from transformers import (
+    DataCollatorForTokenClassification,
+    AutoModelForTokenClassification,
+    AutoTokenizer,
+    get_scheduler,
+)
+from torch.utils.data import DataLoader
+from sentence_transformers import SentenceTransformer
 def main():
     tpann_train, tpann_val, tpann_test = load_tpann()
     # Needed Imports
     warnings.filterwarnings("ignore")
 
 
-def get_shared_examples(ark_all, tweebank_all):
+def get_shared_examples(ark_all, tweebank_all,save=False):
     """Takes as input all examples from ark and twee bank, then returns a list of shared examples of the format
     [shared_x,ark_label,twee_label]"""
-    if os.path.exists('shared_ark_tweebank.npy'):
-        shared_examples = np.load('shared_ark_tweebank.npy', allow_pickle=True)
+    if os.path.exists('shared_ark_tweebank.pkl'):
+        # shared_examples = np.load('shared_ark_tweebank.npy', allow_pickle=True)
+        with open("shared_ark_tweebank.pkl","rb") as file:
+            shared_examples = pickle.load(file)
     else:
         shared_examples = []
         for ark in tqdm(ark_all, desc="Finding shared examples"):
@@ -32,7 +42,11 @@ def get_shared_examples(ark_all, tweebank_all):
                     shared_examples.append([])
                     shared_examples[-1].extend([ark[0], ark[1].cpu(), twee[1].cpu()])
         print("Number of shared Examples: ", len(shared_examples))
-        np.save('shared_ark_tweebank', shared_examples)
+        if save:
+            print("Saving Shared Examples!")
+            with open('shared_ark_tweebank.pkl', 'wb') as file:
+                pickle.dump(shared_examples,file)
+           
     return shared_examples
 
 
@@ -108,7 +122,11 @@ def create_tweebank_ark_dataset():
 ark_train, ark_val, ark_test = load_ark()
 tweebank_train, tweebank_val, tweebank_test = load_tweebank()
 ark_all = ark_train + ark_val + ark_test
+
 tweebank_all = tweebank_train + tweebank_val + tweebank_test
-shared_examples = get_shared_examples(ark_all, tweebank_all)
+
+shared_examples = get_shared_examples(ark_all, tweebank_all,save=True)
+
+
 if __name__ == "__main__":
     main()
