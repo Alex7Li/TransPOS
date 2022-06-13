@@ -20,7 +20,6 @@ from transformers import (
     get_scheduler,
 )
 from torch.utils.data import DataLoader
-from sentence_transformers import SentenceTransformer
 def main():
     tpann_train, tpann_val, tpann_test = load_tpann()
     # Needed Imports

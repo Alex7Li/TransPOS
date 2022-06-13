@@ -6,15 +6,16 @@ import torch
 from tqdm import tqdm
 import training
 from typing import Tuple
+import torch.nn.functional as F
 from pathlib import Path
-import numpy as np
+import math
 from typing import List
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 from transformers import get_scheduler
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+batch_size = 16
 
-# TODO: UNTESTED
 def compose_loss(batch, model: MapperModel, input_label="y"):
     """
     Compute KL(D_z(E(x)), D_y(E(x),y), y) as described in
@@ -32,11 +33,11 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     e_y = model.encode(batch)
     z_tilde = decode_y(e_y, labels)
     y_tilde = decode_z(e_y, z_tilde)
-    loss = torch.nn.KLDivLoss()  # This line might be wrong
-    return loss(y_tilde, batch["labels"])
+    y_pred = F.softmax(y_tilde, dim=2)
+    loss = torch.nn.CrossEntropyLoss()  # This line might be wrong
+    return loss(y_pred.flatten(0, 1), labels.flatten())
 
 
-# TODO: UNTESTED
 def train_epoch(
     y_dataloader: TransformerCompatDataset,
     z_dataloader: TransformerCompatDataset,
@@ -48,22 +49,19 @@ def train_epoch(
     n_iters = min(len(y_dataloader), len(z_dataloader))
     sum_train_loss = 0
     # Iterate until either dataset is exhausted.
-    for i in tqdm(range(n_iters), desc="Epoch progress", mininterval=5):
-        for batch_y, batch_z in zip(y_dataloader, z_dataloader):
-            loss = compose_loss(batch_y, model, "y")
-            loss += compose_loss(batch_z, model, "z")
-            loss.backward()
-            sum_train_loss = loss.detach()
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
+    for batch_y, batch_z in tqdm(zip(y_dataloader, z_dataloader),total=n_iters):
+        loss = compose_loss(batch_y, model, "y") + compose_loss(batch_z, model, "z")
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+        optimizer.zero_grad()
+        sum_train_loss = loss.detach()
     return sum_train_loss / n_iters
 
 
 def get_validation_predictions(model: MapperModel, shared_val_set):
     model.eval()
     y_dataset, z_dataset = shared_val_set
-    batch_size = 32
     y_dataloader = training.get_dataloader(
         model.base_transformer_name, y_dataset, batch_size, shuffle=False
     )
@@ -77,14 +75,13 @@ def get_validation_predictions(model: MapperModel, shared_val_set):
     for y_batch, z_batch in tqdm(
         zip(y_dataloader, z_dataloader),
         desc="Predicting Validation labels",
-        mininterval=5,
         total=len(y_dataloader),
     ):
         labels_y.append(y_batch['labels'])
         labels_z.append(z_batch['labels'])
         e = model.encode(y_batch)
-        z_pred = torch.argmax(model.decode_y(e, labels_y[-1].to(device)), dim=2)
-        y_pred = torch.argmax(model.decode_z(e, labels_z[-1].to(device)), dim=2)
+        z_pred = torch.argmax(model.decode_y(e, labels_y[-1]), dim=2)
+        y_pred = torch.argmax(model.decode_z(e, labels_z[-1]), dim=2)
         predicted_z.append(z_pred)
         predicted_y.append(y_pred)
     return flatten_preds_and_labels(predicted_y, labels_y), flatten_preds_and_labels(predicted_z, labels_z)
@@ -103,7 +100,10 @@ def train_model(
     shared_val_dataset,
     n_epochs,
     save_path,
+    load_weights
 ):
+    if load_weights:
+        model.load(save_path)
     optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
     scheduler = get_scheduler(
         name="linear",
@@ -113,18 +113,18 @@ def train_model(
     )
     best_validation_acc = 0
     valid_acc = 0
-    if shared_val_dataset is not None:
-        # Test
-        valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
-    for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs", maxinterval=50):
+    #if shared_val_dataset is not None:
+    #     Test
+    #    valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
+    for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
         train_loss = train_epoch(
             y_dataloader, z_dataloader, model, optimizer, scheduler
         )
         print(f"Train KL Loss: {train_loss}")
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
-            valid_acc = np.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
-            print(f"Val Acc Y: {valid_acc_y} Val Acc Z {valid_acc_z} ", end=None)
+            valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
+            print(f"Val Acc Y: {valid_acc_y*100}% Val Acc Z {valid_acc_z*100}% Soft label {model.soft_label_value}")
         if valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
             torch.save(model.state_dict(), save_path)
@@ -133,8 +133,7 @@ def train_model(
 
 
 def main(y_dataset_name, z_dataset_name, model_name):
-    batch_size = 32
-    n_epochs = 5
+    n_epochs = 10
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )
@@ -149,12 +148,16 @@ def main(y_dataset_name, z_dataset_name, model_name):
     model = MapperModel(
         "vinai/bertweet-large", y_dataset.num_labels, z_dataset.num_labels
     )
+    model.to(device)
     shared_val_dataset = None
     if y_dataset_name == "tweebank" and z_dataset_name == "ark":
         shared_val_dataset = create_tweebank_ark_dataset()
-    train_model(
-        model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path
+    mapped_model = train_model(
+        model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path,
+        load_weights=True
     )
+    # After 10 epochs:
+    # Val Acc Y: 92.12633451957295% Val Acc Z 92.48220640569394%
 
 
 if __name__ == "__main__":

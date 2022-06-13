@@ -74,7 +74,7 @@ class Decoder_YtoZ(nn.Module):
                                        nn.Linear(decoder_hidden_dim//4,z_classes)
                                        )
         self.transformYtoZ = nn.Linear(y_classes,z_classes)
-        
+
 
     def forward(self, encoded, ybar=None):
         """"""
