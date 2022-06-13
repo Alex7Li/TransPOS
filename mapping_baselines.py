@@ -38,7 +38,7 @@ def normal_model_baseline(train_dataset_name, model_name):
 # Accuracy on tweebank: 94.1281%
 # 10 epochs:
 # 
-# Accuracy on ark: ?%                        
+# Accuracy on ark: 94.3950%                        
 # Accuracy on tweebank: 94.7509% (94.7954% on second run)                           
 def main_normal_model():
   ark_acc = normal_model_baseline("tweebank", "vinai/bertweet-large")
