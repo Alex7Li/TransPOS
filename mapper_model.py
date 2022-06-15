@@ -6,7 +6,7 @@ import torch.nn as nn
 from transformers import AutoModelForTokenClassification, AutoModel
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value):
+def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value, std:float):
     BS, SEQ_LEN = hard_label.shape
     # Ensure the ignored indicies don't crash the code.
     hard_label = torch.clone(hard_label)
@@ -18,7 +18,7 @@ def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value):
     # Add some random noise. Maybe it's helpful, maybe not?
     soft_label = torch.normal(
         mean=one_hot, 
-        std=.1 * torch.ones(one_hot.shape,
+        std=std * torch.ones(one_hot.shape,
         device=one_hot.device))
     return soft_label
 
@@ -61,6 +61,10 @@ class MapperModel(torch.nn.Module):
             nn.Linear(decoder_hidden_2_dim,n_y_labels),
             )
 
+        # Make the soft labels look similar to the hard labels so the model
+        # is tricked into thinking they are the same or something
+        self.harden_label = True
+
 
     def encode(self, batch: dict) -> torch.Tensor:
         """
@@ -84,17 +88,26 @@ class MapperModel(torch.nn.Module):
         # it has only 1 element
         return result[0] 
 
+    def preprocess_label(self, label, n_labels):
+        if len(label.shape) == 2:
+            # label is of shape [batch, L]
+            std = 1 if self.training else 0
+            label = hardToSoftLabel(label, n_labels, self.soft_label_value, std)
+        elif len(label.shape) == 3 and self.harden_label:
+            # label is of shape [batch, L, n_labels]
+            ind = torch.argmax(label, dim=2)
+            label[:, :, ind] = self.soft_label_value
+        label -= torch.unsqueeze(torch.mean(label, dim=2),2)
+        return label.to(device)
+
     def decode_y(self, e: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
         Combine an embedding with a Y label to predict a Z label.
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         y: batch of integer label or estimated vector softmax estimate of Y of size n_y_labels.
         """
-        if len(y.shape) == 2:
-            y = hardToSoftLabel(y, self.n_y_labels, self.soft_label_value)
-        y -= torch.unsqueeze(torch.mean(y, dim=2),2)
-        y = y.to(device)
-        ycat =torch.cat([e, y], dim=2)
+        y = self.preprocess_label(y, self.n_y_labels)
+        ycat = torch.cat([e, y], dim=2)
         pred_z = self.yzdecoding(ycat)
         return pred_z
 
@@ -104,10 +117,7 @@ class MapperModel(torch.nn.Module):
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
-        if len(z.shape) == 2:
-            z = hardToSoftLabel(z, self.n_z_labels, self.soft_label_value)
-        z -= torch.unsqueeze(torch.mean(z, dim=2),2)
-        z = z.to(device)
+        z = self.preprocess_label(z, self.n_z_labels)
         zcat = torch.cat([e, z], dim=2)
         pred_y = self.zydecoding(zcat)
         return pred_y

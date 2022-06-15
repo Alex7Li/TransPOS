@@ -37,7 +37,6 @@ def normal_model_baseline(train_dataset_name, model_name):
 # On ark: 93.5943%
 # Accuracy on tweebank: 94.1281%
 # 10 epochs:
-# 
 # Accuracy on ark: 94.3950%                        
 # Accuracy on tweebank: 94.7509% (94.7954% on second run)                           
 def main_normal_model():

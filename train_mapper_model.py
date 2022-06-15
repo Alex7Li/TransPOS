@@ -9,6 +9,7 @@ from typing import Tuple
 import torch.nn.functional as F
 from pathlib import Path
 import math
+import os
 from typing import List
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 from transformers import get_scheduler
@@ -102,8 +103,8 @@ def train_model(
     save_path,
     load_weights
 ):
-    if load_weights:
-        model.load(save_path)
+    if load_weights and os.path.exists(save_path):
+        model.load_state_dict(torch.load(save_path))
     optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
     scheduler = get_scheduler(
         name="linear",
