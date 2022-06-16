@@ -64,8 +64,7 @@ class MapperModel(torch.nn.Module):
             )
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
-        self.harden_label = True
-        self.softmax = torch.nn.Softmax(dim=2)
+        self.harden_label = False
 
 
     def encode(self, batch: dict) -> torch.Tensor:
@@ -100,7 +99,8 @@ class MapperModel(torch.nn.Module):
             ind = torch.argmax(label, dim=2)
             # Clone here is required; it prevents a error
             # with torch not being able to make the gradients flow backwards
-            label_soft = self.softmax(label * 1.5).clone()
+            # label_soft = self.softmax(label).clone() # bad since the gradients all die
+            label_soft = label
             label_soft[:, :, ind] = label_soft[:, :, ind] * self.soft_label_value
         else:
             label_soft = label

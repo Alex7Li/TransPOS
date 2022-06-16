@@ -38,8 +38,10 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     z_tilde = decode_y(e_y, labels)
     y_tilde = decode_z(e_y, z_tilde)
     y_pred = F.softmax(y_tilde, dim=2)
+    correct = torch.sum(torch.argmax(y_pred, dim=2) == labels)
+    total = torch.sum(labels == -100)
     loss = torch.nn.CrossEntropyLoss()  # This line might be wrong
-    return loss(y_pred.flatten(0, 1), labels.flatten())
+    return loss(y_pred.flatten(0, 1), labels.flatten()), correct, total
 
 
 def train_epoch(
@@ -51,13 +53,24 @@ def train_epoch(
     model.train()
     n_iters = min(len(y_dataloader), len(z_dataloader))
     sum_train_loss = 0
+    correct_y = 0
+    correct_z = 0
+    total_y = 0
+    total_z = 0
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in tqdm(zip(y_dataloader, z_dataloader),total=n_iters):
-        loss = compose_loss(batch_y, model, "y") + compose_loss(batch_z, model, "z")
+        ly, cy, ty = compose_loss(batch_y, model, "y")
+        lz, cz, tz = compose_loss(batch_z, model, "z")
+        loss = ly + lz
         loss.backward()
+        correct_y += cy
+        total_y += ty
+        correct_z += cz
+        total_z += tz
         optimizer.step()
         optimizer.zero_grad()
         sum_train_loss = loss.detach()
+    print(f"Train accuracy Y: {100 * correct_y / total_y:.3f} Z: {100 * correct_z / total_z:.3f}")
     return sum_train_loss / n_iters
 
 
