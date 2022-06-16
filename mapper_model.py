@@ -42,7 +42,7 @@ class MapperModel(torch.nn.Module):
         decoder_hidden_dim = 256
         decoder_hidden_2_dim = 256
         # Conversion from hard label to soft label
-        self.soft_label_value = torch.nn.Parameter(torch.tensor(5.0))
+        self.soft_label_value = torch.nn.Parameter(torch.tensor(4.0))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
         self.yzdecoding = nn.Sequential(
             nn.Linear(embedding_dim_size + n_y_labels, decoder_hidden_dim),
@@ -100,7 +100,7 @@ class MapperModel(torch.nn.Module):
             ind = torch.argmax(label, dim=2)
             # Clone here is required; it prevents a error
             # with torch not being able to make the gradients flow backwards
-            label_soft = self.softmax(label * 3).clone()
+            label_soft = self.softmax(label * 1.5).clone()
             label_soft[:, :, ind] = label_soft[:, :, ind] * self.soft_label_value
         else:
             label_soft = label

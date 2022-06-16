@@ -167,5 +167,4 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
 
 
 if __name__ == "__main__":
-    torch.autograd.set_detect_anomaly(True)
     main("tweebank", "ark", "vinai/bertweet-large")
