@@ -52,7 +52,7 @@ def train_epoch(
     n_iters = min(len(y_dataloader), len(z_dataloader))
     sum_train_loss = 0
     # Iterate until either dataset is exhausted.
-    for batch_y, batch_z in tqdm.tqdm(zip(y_dataloader, z_dataloader),total=n_iters):
+    for batch_y, batch_z in tqdm(zip(y_dataloader, z_dataloader),total=n_iters):
         loss = compose_loss(batch_y, model, "y") + compose_loss(batch_z, model, "z")
         loss.backward()
         optimizer.step()
@@ -75,7 +75,7 @@ def get_validation_predictions(model: MapperModel, shared_val_set):
     predicted_z = []
     labels_y = []
     labels_z = []
-    for y_batch, z_batch in tqdm.tqdm(
+    for y_batch, z_batch in tqdm(
         zip(y_dataloader, z_dataloader),
         desc="Predicting Validation labels",
         total=len(y_dataloader),
@@ -119,7 +119,7 @@ def train_model(
     #if shared_val_dataset is not None:
     #     Test
     #    valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
-    for epoch_index in tqdm.tqdm(range(0, n_epochs), desc="Training epochs",):
+    for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
         train_loss = train_epoch(
             y_dataloader, z_dataloader, model, optimizer, scheduler
         )
