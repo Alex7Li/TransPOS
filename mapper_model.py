@@ -14,12 +14,14 @@ def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value, 
     one_hot = F.one_hot(hard_label, n_classes)
     # Add 5 to the parameter because weight decay will make
     # it want to be zero but really we want it to be positive
-    one_hot = one_hot.float().to(device) * (soft_label_value + 5.0)
+    one_hot = one_hot.float().to(device)
     # Add some random noise. Maybe it's helpful, maybe not?
     soft_label = torch.normal(
-        mean=one_hot, 
-        std=std * torch.ones(one_hot.shape,
-        device=one_hot.device))
+        mean=torch.zeros(one_hot.shape,
+        device=one_hot.device, dtype=torch.float), 
+        std=torch.ones(one_hot.shape,
+        device=one_hot.device, dtype=torch.float)) * std \
+            + one_hot * soft_label_value
     return soft_label
 
 class MapperModel(torch.nn.Module):
@@ -40,7 +42,7 @@ class MapperModel(torch.nn.Module):
         decoder_hidden_dim = 256
         decoder_hidden_2_dim = 256
         # Conversion from hard label to soft label
-        self.soft_label_value = torch.nn.Parameter(torch.tensor(0.0), True)
+        self.soft_label_value = torch.nn.Parameter(torch.tensor(4.0))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
         self.yzdecoding = nn.Sequential(
             nn.Linear(embedding_dim_size + n_y_labels, decoder_hidden_dim),
@@ -60,10 +62,9 @@ class MapperModel(torch.nn.Module):
             nn.Dropout(self.decoderDropout),
             nn.Linear(decoder_hidden_2_dim,n_y_labels),
             )
-
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
-        self.harden_label = True
+        self.harden_label = False
 
 
     def encode(self, batch: dict) -> torch.Tensor:
@@ -91,14 +92,20 @@ class MapperModel(torch.nn.Module):
     def preprocess_label(self, label, n_labels):
         if len(label.shape) == 2:
             # label is of shape [batch, L]
-            std = 1 if self.training else 0
-            label = hardToSoftLabel(label, n_labels, self.soft_label_value, std)
+            std = 0.0#1 if self.training else 0
+            label_soft = hardToSoftLabel(label, n_labels, self.soft_label_value, std)
         elif len(label.shape) == 3 and self.harden_label:
             # label is of shape [batch, L, n_labels]
             ind = torch.argmax(label, dim=2)
-            label[:, :, ind] = self.soft_label_value
-        label -= torch.unsqueeze(torch.mean(label, dim=2),2)
-        return label.to(device)
+            # Clone here is required; it prevents a error
+            # with torch not being able to make the gradients flow backwards
+            # label_soft = self.softmax(label).clone() # bad since the gradients all die
+            label_soft = label
+            label_soft[:, :, ind] = label_soft[:, :, ind] * self.soft_label_value
+        else:
+            label_soft = label
+        label_soft -= torch.unsqueeze(torch.mean(label_soft, dim=2),2)
+        return label_soft.to(device)
 
     def decode_y(self, e: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """

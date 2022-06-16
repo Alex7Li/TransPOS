@@ -5,8 +5,9 @@ from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
 import torch
 from functools import partial
 from tqdm import tqdm as std_tqdm
-tqdm = partial(std_tqdm, leave=False, position=0, dynamic_ncols=True)
+tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
 import training
+import itertools
 from typing import Tuple
 import torch.nn.functional as F
 from pathlib import Path
@@ -14,7 +15,7 @@ import math
 import os
 from typing import List
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
-from transformers import get_scheduler
+import torch.optim.lr_scheduler
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 batch_size = 16
@@ -37,8 +38,10 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     z_tilde = decode_y(e_y, labels)
     y_tilde = decode_z(e_y, z_tilde)
     y_pred = F.softmax(y_tilde, dim=2)
+    correct = torch.sum(torch.argmax(y_pred, dim=2) == labels)
+    total = torch.sum(labels != -100)
     loss = torch.nn.CrossEntropyLoss()  # This line might be wrong
-    return loss(y_pred.flatten(0, 1), labels.flatten())
+    return loss(y_pred.flatten(0, 1), labels.flatten()), correct, total
 
 
 def train_epoch(
@@ -46,19 +49,28 @@ def train_epoch(
     z_dataloader: TransformerCompatDataset,
     model: MapperModel,
     optimizer: torch.optim.Optimizer,
-    scheduler,
 ):
     model.train()
     n_iters = min(len(y_dataloader), len(z_dataloader))
     sum_train_loss = 0
+    correct_y = 0
+    correct_z = 0
+    total_y = 0
+    total_z = 0
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in tqdm(zip(y_dataloader, z_dataloader),total=n_iters):
-        loss = compose_loss(batch_y, model, "y") + compose_loss(batch_z, model, "z")
+        ly, cy, ty = compose_loss(batch_y, model, "y")
+        lz, cz, tz = compose_loss(batch_z, model, "z")
+        loss = ly + lz
         loss.backward()
+        correct_y += cy
+        total_y += ty
+        correct_z += cz
+        total_z += tz
         optimizer.step()
-        scheduler.step()
         optimizer.zero_grad()
         sum_train_loss = loss.detach()
+    print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
     return sum_train_loss / n_iters
 
 
@@ -107,13 +119,15 @@ def train_model(
 ):
     if load_weights and os.path.exists(save_path):
         model.load_state_dict(torch.load(save_path))
-    optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
-    scheduler = get_scheduler(
-        name="linear",
-        optimizer=optimizer,
-        num_warmup_steps=0,
-        num_training_steps=min(len(y_dataloader), len(z_dataloader)) * n_epochs,
-    )
+        print(f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs")
+    optimizer = torch.optim.NAdam([
+        {'params': model.model.parameters(), 'lr': 3e-5, 'weight_decay': 1e-4},
+        {'params': itertools.chain(model.yzdecoding.parameters(),
+                                   model.zydecoding.parameters()),
+         'lr': 1e-4, 'weight_decay': 6e-5},
+        {'params': [model.soft_label_value], 'lr': 1e-3, 'weight_decay': 0},
+        ])
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.3, patience=8, verbose=True)
     best_validation_acc = 0
     valid_acc = 0
     #if shared_val_dataset is not None:
@@ -121,23 +135,23 @@ def train_model(
     #    valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
     for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
         train_loss = train_epoch(
-            y_dataloader, z_dataloader, model, optimizer, scheduler
+            y_dataloader, z_dataloader, model, optimizer
         )
-        print(f"Train KL Loss: {train_loss}")
+        print(f"Epoch {epoch_index} Train KL Loss: {train_loss}")
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
-            print(f"Val Acc Y: {valid_acc_y*100}% Val Acc Z {valid_acc_z*100}% Soft label {model.soft_label_value}")
+            print(f"Val Acc Y: {valid_acc_y*100:.3f}% Val Acc Z {valid_acc_z*100:.3f}% Soft label {model.soft_label_value:.5f}")
         if valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)
             torch.save(model.state_dict(), save_path)
+        scheduler.step(valid_acc)
     return model
 
 
 
-def main(y_dataset_name, z_dataset_name, model_name):
-    n_epochs = 10
+def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_weights=True):
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )
@@ -158,10 +172,11 @@ def main(y_dataset_name, z_dataset_name, model_name):
         shared_val_dataset = create_tweebank_ark_dataset()
     mapped_model = train_model(
         model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path,
-        load_weights=True
+        load_weights=load_cached_weights
     )
     # After 10 epochs:
     # Val Acc Y: 92.12633451957295% Val Acc Z 92.48220640569394%
+    return mapped_model
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ from functools import partial
 import torch
 from tqdm import tqdm as std_tqdm
 
-tqdm = partial(std_tqdm, leave=False, position=0, dynamic_ncols=True)
+tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
 import warnings
 from ArkDataset.load_ark import load_ark
 from TPANNDataset.load_tpann import load_tpann
