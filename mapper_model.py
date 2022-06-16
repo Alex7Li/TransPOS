@@ -92,7 +92,7 @@ class MapperModel(torch.nn.Module):
     def preprocess_label(self, label, n_labels):
         if len(label.shape) == 2:
             # label is of shape [batch, L]
-            std = 1 if self.training else 0
+            std = 0#1 if self.training else 0
             label = hardToSoftLabel(label, n_labels, self.soft_label_value, std)
         elif len(label.shape) == 3 and self.harden_label:
             # label is of shape [batch, L, n_labels]
