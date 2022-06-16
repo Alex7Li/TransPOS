@@ -40,7 +40,7 @@ class MapperModel(torch.nn.Module):
         decoder_hidden_dim = 256
         decoder_hidden_2_dim = 256
         # Conversion from hard label to soft label
-        self.soft_label_value = torch.nn.Parameter(torch.tensor(5.0), True)
+        self.soft_label_value = torch.nn.Parameter(torch.tensor(5.0))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
         self.yzdecoding = nn.Sequential(
             nn.Linear(embedding_dim_size + n_y_labels, decoder_hidden_dim),
