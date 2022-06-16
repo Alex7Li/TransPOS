@@ -39,7 +39,7 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     y_tilde = decode_z(e_y, z_tilde)
     y_pred = F.softmax(y_tilde, dim=2)
     correct = torch.sum(torch.argmax(y_pred, dim=2) == labels)
-    total = torch.sum(labels == -100)
+    total = torch.sum(labels != -100)
     loss = torch.nn.CrossEntropyLoss()  # This line might be wrong
     return loss(y_pred.flatten(0, 1), labels.flatten()), correct, total
 
@@ -70,7 +70,7 @@ def train_epoch(
         optimizer.step()
         optimizer.zero_grad()
         sum_train_loss = loss.detach()
-    print(f"Train accuracy Y: {100 * correct_y / total_y:.3f} Z: {100 * correct_z / total_z:.3f}")
+    print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
     return sum_train_loss / n_iters
 
 
