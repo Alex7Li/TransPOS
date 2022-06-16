@@ -64,7 +64,7 @@ class MapperModel(torch.nn.Module):
 
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
-        self.harden_label = False
+        self.harden_label = True
 
 
     def encode(self, batch: dict) -> torch.Tensor:

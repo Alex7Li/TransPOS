@@ -114,7 +114,7 @@ def train_model(
          'lr': 1e-4, 'weight_decay': 6e-5},
         {'params': [model.soft_label_value], 'lr': 1e-3, 'weight_decay': 0},
         ])
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.3, patience=5, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.3, patience=8, verbose=True)
     best_validation_acc = 0
     valid_acc = 0
     #if shared_val_dataset is not None:
@@ -124,7 +124,7 @@ def train_model(
         train_loss = train_epoch(
             y_dataloader, z_dataloader, model, optimizer
         )
-        print(f"Train KL Loss: {train_loss}")
+        print(f"Epoch {epoch_index} Train KL Loss: {train_loss}")
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
