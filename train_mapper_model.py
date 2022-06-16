@@ -128,6 +128,7 @@ def train_model(
             print(f"Val Acc Y: {valid_acc_y*100}% Val Acc Z {valid_acc_z*100}% Soft label {model.soft_label_value}")
         if valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
+            os.makedirs(os.path.split(save_path)[0], exist_ok=True)
             torch.save(model.state_dict(), save_path)
     return model
 
