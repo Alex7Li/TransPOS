@@ -5,8 +5,9 @@ from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
 import torch
 from functools import partial
 from tqdm import tqdm as std_tqdm
-tqdm = partial(std_tqdm, leave=False, position=0, dynamic_ncols=True)
+tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
 import training
+import itertools
 from typing import Tuple
 import torch.nn.functional as F
 from pathlib import Path
@@ -107,7 +108,14 @@ def train_model(
 ):
     if load_weights and os.path.exists(save_path):
         model.load_state_dict(torch.load(save_path))
-    optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
+        print(f"Loaded weights from {save_path}. Will continue for {n_epochs} Epochs")
+    optimizer = torch.optim.NAdam([
+        {'params': model.model.parameters(), 'lr': 3e-5, 'weight_decay': 1e-4},
+        {'params': itertools.chain(model.yzdecoding.parameters(),
+                                   model.zydecoding.parameters()),
+         'lr': 3e-4, 'weight_decay': 1e-4},
+        {'params': model.soft_label_value, 'lr': 1e-3, 'weight_decay': 0},
+        ])
     scheduler = get_scheduler(
         name="linear",
         optimizer=optimizer,
@@ -136,8 +144,7 @@ def train_model(
 
 
 
-def main(y_dataset_name, z_dataset_name, model_name):
-    n_epochs = 10
+def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_weights=True):
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )
@@ -158,7 +165,7 @@ def main(y_dataset_name, z_dataset_name, model_name):
         shared_val_dataset = create_tweebank_ark_dataset()
     mapped_model = train_model(
         model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path,
-        load_weights=True
+        load_weights=load_cached_weights
     )
     # After 10 epochs:
     # Val Acc Y: 92.12633451957295% Val Acc Z 92.48220640569394%

@@ -14,7 +14,7 @@ def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value, 
     one_hot = F.one_hot(hard_label, n_classes)
     # Add 5 to the parameter because weight decay will make
     # it want to be zero but really we want it to be positive
-    one_hot = one_hot.float().to(device) * (soft_label_value + 5.0)
+    one_hot = one_hot.float().to(device) * soft_label_value
     # Add some random noise. Maybe it's helpful, maybe not?
     soft_label = torch.normal(
         mean=one_hot, 
@@ -40,7 +40,7 @@ class MapperModel(torch.nn.Module):
         decoder_hidden_dim = 256
         decoder_hidden_2_dim = 256
         # Conversion from hard label to soft label
-        self.soft_label_value = torch.nn.Parameter(torch.tensor(0.0), True)
+        self.soft_label_value = torch.nn.Parameter(torch.tensor(5.0), True)
         self.register_parameter(name='soft_label', param=self.soft_label_value)
         self.yzdecoding = nn.Sequential(
             nn.Linear(embedding_dim_size + n_y_labels, decoder_hidden_dim),
@@ -63,7 +63,7 @@ class MapperModel(torch.nn.Module):
 
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
-        self.harden_label = True
+        self.harden_label = False
 
 
     def encode(self, batch: dict) -> torch.Tensor:

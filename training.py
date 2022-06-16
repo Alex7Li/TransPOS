@@ -17,7 +17,7 @@ from transformers import (
 from functools import partial
 from tqdm import tqdm as std_tqdm
 
-tqdm = partial(std_tqdm, leave=False, position=0, dynamic_ncols=True)
+tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
