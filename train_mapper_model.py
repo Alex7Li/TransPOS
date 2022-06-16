@@ -112,7 +112,7 @@ def train_model(
         {'params': itertools.chain(model.yzdecoding.parameters(),
                                    model.zydecoding.parameters()),
          'lr': 1e-4, 'weight_decay': 1e-4},
-        {'params': [model.soft_label_value], 'lr': 3e-4, 'weight_decay': 0},
+        {'params': [model.soft_label_value], 'lr': 1e-3, 'weight_decay': 0},
         ])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.3, patience=5, verbose=True)
     best_validation_acc = 0
@@ -128,7 +128,7 @@ def train_model(
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
-            print(f"Val Acc Y: {valid_acc_y*100}% Val Acc Z {valid_acc_z*100}% Soft label {model.soft_label_value}")
+            print(f"Val Acc Y: {valid_acc_y*100:.3f}% Val Acc Z {valid_acc_z*100:.3f}% Soft label {model.soft_label_value:.5f}")
         if valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)

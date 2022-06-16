@@ -14,12 +14,13 @@ def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value, 
     one_hot = F.one_hot(hard_label, n_classes)
     # Add 5 to the parameter because weight decay will make
     # it want to be zero but really we want it to be positive
-    one_hot = one_hot.float().to(device) * soft_label_value
+    one_hot = one_hot.float().to(device)
     # Add some random noise. Maybe it's helpful, maybe not?
     soft_label = torch.normal(
-        mean=one_hot, 
-        std=std * torch.ones(one_hot.shape,
-        device=one_hot.device))
+        mean=torch.zeros(one_hot.shape,
+        device=one_hot.device), 
+        std=torch.ones(one_hot.shape,
+        device=one_hot.device)) * std + one_hot * soft_label_value
     return soft_label
 
 class MapperModel(torch.nn.Module):
