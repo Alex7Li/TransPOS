@@ -96,8 +96,9 @@ class MapperModel(torch.nn.Module):
             label = hardToSoftLabel(label, n_labels, self.soft_label_value, std)
         elif len(label.shape) == 3 and self.harden_label:
             # label is of shape [batch, L, n_labels]
+            label = F.softmax(label * 3)
             ind = torch.argmax(label, dim=2)
-            label[:, :, ind] = self.soft_label_value
+            label[:, :, ind] *= self.soft_label_value
         label -= torch.unsqueeze(torch.mean(label, dim=2),2)
         return label.to(device)
 
