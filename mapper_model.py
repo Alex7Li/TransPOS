@@ -78,7 +78,7 @@ class MapperModel(torch.nn.Module):
         diff = soft_label - realistic_soft
         loss = torch.linalg.norm(diff, dim=2)
         loss = loss * attention_mask
-        return loss / torch.sum(attention_mask)
+        return torch.sum(loss) / torch.sum(attention_mask)
         
 
     def encode(self, batch: dict) -> torch.Tensor:
