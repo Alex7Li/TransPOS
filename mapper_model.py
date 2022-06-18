@@ -46,10 +46,10 @@ class MapperModel(torch.nn.Module):
         self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
         self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
         shared_w =  torch.rand((n_y_labels, n_z_labels))*.2 - .1
-        self.zydecoding = nn.Linear(n_z_labels, n_y_labels)
         self.yzdecoding = nn.Linear(n_y_labels, n_z_labels)
-        self.yzdecoding.weight = nn.Parameter(shared_w)
-        self.zydecoding.weight = nn.Parameter(shared_w.T)
+        self.zydecoding = nn.Linear(n_z_labels, n_y_labels)
+        self.yzdecoding.weight = nn.Parameter(shared_w.T)
+        self.zydecoding.weight = nn.Parameter(shared_w)
         
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
@@ -115,8 +115,9 @@ class MapperModel(torch.nn.Module):
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         y: batch of integer label or estimated vector softmax estimate of Y of size n_y_labels.
         """
-        y = self.preprocess_label(y, self.n_y_labels)
-        pred_z = self.yzdecoding(y) + self.zdecoding(e)
+        y = self.preprocess_label(y, self.n_y_labels).clone()
+        ze = self.zdecoding(e)
+        pred_z = self.yzdecoding(y) + ze
         return pred_z
 
     def decode_z(self, e: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
@@ -125,6 +126,7 @@ class MapperModel(torch.nn.Module):
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
-        z = self.preprocess_label(z, self.n_z_labels)
-        pred_y = self.zydecoding(z) + self.ydecoding(e)
+        z = self.preprocess_label(z, self.n_z_labels).clone()
+        ye = self.ydecoding(e)
+        pred_y = self.zydecoding(z) + ye
         return pred_y
