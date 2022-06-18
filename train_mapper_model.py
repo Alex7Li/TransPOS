@@ -20,7 +20,6 @@ import torch.optim.lr_scheduler
 device = "cuda" if torch.cuda.is_available() else "cpu"
 batch_size = 16
 
-
 def compose_loss(batch, model: MapperModel, input_label="y"):
     """
     Compute KL(D_z(E(x)), D_y(E(x),y), y) as described in
@@ -44,7 +43,7 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     total = torch.sum(labels != -100)
     loss_f = torch.nn.CrossEntropyLoss()
     loss = loss_f(y_pred_soft.flatten(0, 1), labels.flatten())
-    label_loss = .1 * model.label_loss(z_tilde, batch['attention_mask'])
+    label_loss = model.label_loss(z_tilde, batch['attention_mask'])
     return loss, label_loss, correct, total
 
 
@@ -53,6 +52,7 @@ def train_epoch(
     z_dataloader: TransformerCompatDataset,
     model: MapperModel,
     optimizer: torch.optim.Optimizer,
+    alpha: float
 ):
     model.train()
     n_iters = min(len(y_dataloader), len(z_dataloader))
@@ -68,7 +68,7 @@ def train_epoch(
         ly, lly, cy, ty = compose_loss(batch_y, model, "y")
         lz, llz, cz, tz = compose_loss(batch_z, model, "z")
         loss = ly + lz
-        label_loss = lly + llz
+        label_loss = alpha * (lly + llz)
         total_loss = loss + label_loss
         pbar.set_description(f"CE:{loss:.2f}, soft_label:{label_loss:.2f}")
         total_loss.backward()
@@ -125,7 +125,8 @@ def train_model(
     shared_val_dataset,
     n_epochs,
     save_path,
-    load_weights
+    load_weights,
+    alpha
 ):
     if load_weights and os.path.exists(save_path):
         model.load_state_dict(torch.load(save_path))
@@ -145,7 +146,7 @@ def train_model(
     #    valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
     for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
         kl_loss, label_loss = train_epoch(
-            y_dataloader, z_dataloader, model, optimizer
+            y_dataloader, z_dataloader, model, optimizer, alpha
         )
         print(f"Epoch {epoch_index} Train KL Loss: {kl_loss} Train label loss: {label_loss}")
         if shared_val_dataset is not None:
@@ -161,7 +162,7 @@ def train_model(
 
 
 
-def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_weights=True):
+def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_weights=True, alpha=.01):
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )
@@ -182,7 +183,7 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
         shared_val_dataset = create_tweebank_ark_dataset()
     mapped_model = train_model(
         model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path,
-        load_weights=load_cached_weights
+        load_weights=load_cached_weights, alpha=.001
     )
     # After 10 epochs:
     # Val Acc Y: 92.12633451957295% Val Acc Z 92.48220640569394%
@@ -190,4 +191,4 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
 
 
 if __name__ == "__main__":
-    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)
+    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False, alpha=.01)
