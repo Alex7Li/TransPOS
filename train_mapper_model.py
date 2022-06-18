@@ -137,11 +137,11 @@ def train_model(
         print(f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs")
     optimizer = torch.optim.NAdam([
         {'params': itertools.chain(model.model.parameters(),
-                                   model.yzdecoding.parameters(),
-                                   model.zydecoding.parameters())
+                                   model.ydecoding.parameters(),
+                                   model.zdecoding.parameters())
                                    , 'lr': 3e-5, 'weight_decay': 1e-4},
-        {'params': itertools.chain(model.zdecoding.parameters(),
-                                   model.ydecoding.parameters()),
+        {'params': itertools.chain(model.yzdecoding.parameters(),
+                                   model.zydecoding.parameters()),
          'lr': 3e-3, 'weight_decay': 1e-6},
         {'params': [model.soft_label_value], 'lr':0,# 1e-3,
          'weight_decay': 0},
