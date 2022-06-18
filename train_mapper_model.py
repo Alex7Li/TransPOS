@@ -67,10 +67,13 @@ def train_epoch(
     for batch_y, batch_z in pbar:
         ly, lly, cy, ty = compose_loss(batch_y, model, "y")
         lz, llz, cz, tz = compose_loss(batch_z, model, "z")
-        loss = ly + lz
+        cross_entropy_loss = ly + lz
         label_loss = alpha * (lly + llz)
-        total_loss = loss + label_loss
-        pbar.set_description(f"CE:{loss:.2f}, soft_label:{label_loss:.2f}")
+        total_loss = cross_entropy_loss + label_loss
+        postfix_dict = {'CE': cross_entropy_loss.item()}
+        if alpha > 0:
+            postfix_dict.update({'label': label_loss.item()/alpha})
+        pbar.set_postfix(postfix_dict)
         total_loss.backward()
         correct_y += cy
         total_y += ty
@@ -78,8 +81,8 @@ def train_epoch(
         total_z += tz
         optimizer.step()
         optimizer.zero_grad()
-        sum_kl_loss += loss.detach()
-        sum_label_loss += loss.detach()
+        sum_kl_loss += cross_entropy_loss.detach()
+        sum_label_loss += label_loss.detach()
     print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
     return sum_kl_loss / n_iters, sum_label_loss / n_iters
 
