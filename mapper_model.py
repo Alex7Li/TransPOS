@@ -45,22 +45,10 @@ class MapperModel(torch.nn.Module):
         self.soft_label_value = torch.nn.Parameter(torch.tensor(4.0))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
         self.yzdecoding = nn.Sequential(
-            nn.Linear(embedding_dim_size + n_y_labels, decoder_hidden_dim),
-            nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_dim,decoder_hidden_2_dim),
-            nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_2_dim,n_z_labels),
+            nn.Linear(embedding_dim_size + n_y_labels, n_z_labels),
             )
         self.zydecoding = nn.Sequential(
-            nn.Linear(embedding_dim_size + n_z_labels, decoder_hidden_dim),
-            nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_dim,decoder_hidden_2_dim),
-            nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_2_dim,n_y_labels),
+            nn.Linear(embedding_dim_size + n_z_labels, n_y_labels),
             )
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
