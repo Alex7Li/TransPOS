@@ -42,7 +42,7 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     y_pred = torch.argmax(y_pred_soft, dim=2)
     correct = torch.sum(y_pred == labels)
     total = torch.sum(labels != -100)
-    loss_f = torch.nn.CrossEntropyLoss()
+    loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
     loss = loss_f(y_pred_soft.flatten(0, 1), labels.flatten())
     label_loss = model.label_loss(z_tilde, batch['attention_mask'])
     return loss, label_loss, correct, total
@@ -142,14 +142,14 @@ def train_model(
                                    , 'lr': 3e-5, 'weight_decay': 1e-4},
         {'params': itertools.chain(model.yzdecoding.parameters(),
                                    model.zydecoding.parameters()),
-         'lr': 3e-3, 'weight_decay': 1e-6},
+         'lr': 2e-4, 'weight_decay': 1e-6},
         {'params': [model.soft_label_value], 'lr':0,# 1e-3,
          'weight_decay': 0},
         ])
     scheduler = LambdaLR(optimizer, lr_lambda=
         [
-            lambda epoch:0 if epoch < 2 else 1,
-            lambda epoch:max(1e-2,.1**epoch),
+            lambda epoch:0 if epoch < 1 else 1,
+            lambda epoch:max(1e-1,.5**epoch),
             lambda epoch:1
         ]
         )
@@ -162,7 +162,7 @@ def train_model(
         kl_loss, label_loss = train_epoch(
             y_dataloader, z_dataloader, model, optimizer, alpha
         )
-        print(f"Epoch {epoch_index} Train KL Loss: {kl_loss} Train label loss: {label_loss}")
+        print(f"Epoch {epoch_index} Train CE Loss: {kl_loss} Train label loss: {label_loss}")
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
