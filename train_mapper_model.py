@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from pathlib import Path
 import math
 import os
+from torch.optim.lr_scheduler import LambdaLR
 from typing import List
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 import torch.optim.lr_scheduler
@@ -138,11 +139,17 @@ def train_model(
         {'params': model.model.parameters(), 'lr': 3e-5, 'weight_decay': 1e-4},
         {'params': itertools.chain(model.yzdecoding.parameters(),
                                    model.zydecoding.parameters()),
-         'lr': 1e-4, 'weight_decay': 6e-5},
+         'lr': 1e-2, 'weight_decay': 1e-5},
         {'params': [model.soft_label_value], 'lr':0,# 1e-3,
          'weight_decay': 0},
         ])
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.3, patience=8, verbose=True)
+    scheduler = LambdaLR(optimizer, lr_lambda=
+        [
+            lambda epoch:1,
+            lambda epoch:max(1e-5,.95**epoch),
+            lambda epoch:1
+        ]
+        )
     best_validation_acc = 0
     valid_acc = 0
     #if shared_val_dataset is not None:
@@ -161,7 +168,7 @@ def train_model(
             best_validation_acc = valid_acc
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)
             torch.save(model.state_dict(), save_path)
-        scheduler.step(valid_acc)
+        scheduler.step()
     return model
 
 
