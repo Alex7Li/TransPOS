@@ -38,12 +38,13 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     e_y = model.encode(batch)
     z_tilde = decode_y(e_y, labels)
     y_tilde = decode_z(e_y, z_tilde)
-    y_pred = F.softmax(y_tilde, dim=2)
-    correct = torch.sum(torch.argmax(y_pred, dim=2) == labels)
+    y_pred_soft = F.softmax(y_tilde, dim=2)
+    y_pred = torch.argmax(y_pred_soft, dim=2)
+    correct = torch.sum(y_pred == labels)
     total = torch.sum(labels != -100)
     loss_f = torch.nn.CrossEntropyLoss()
-    loss = loss_f(y_pred.flatten(0, 1), labels.flatten())
-    label_loss = .5 * model.label_loss(z_tilde, batch['attention_mask'])
+    loss = loss_f(y_pred_soft.flatten(0, 1), labels.flatten())
+    label_loss = model.label_loss(z_tilde, batch['attention_mask'])
     return loss, label_loss, correct, total
 
 
