@@ -41,7 +41,7 @@ class MapperModel(torch.nn.Module):
         self.model.to(device)
         self.decoderDropout = .05
         # Conversion from hard label to soft label
-        self.soft_label_value = torch.nn.Parameter(torch.tensor(3.0, dtype=torch.float32))
+        self.soft_label_value = torch.nn.Parameter(torch.tensor(2.0, dtype=torch.float32))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
         decoder_hidden_dim = 512
         decoder_hidden_2_dim = 512
@@ -73,9 +73,10 @@ class MapperModel(torch.nn.Module):
         B, sentence_length, n_classes = soft_label.shape
         hard_label = torch.argmax(soft_label, dim=2)
         realistic_soft = hardToSoftLabel(hard_label, n_classes, self.soft_label_value, 0)
+        # Normalize
+        soft_label -= torch.unsqueeze(torch.mean(soft_label, dim=2), 2)
         diff = soft_label - realistic_soft
-        centered = diff - torch.unsqueeze(torch.mean(diff, dim=2), 2)
-        loss = torch.linalg.norm(centered, dim=2)
+        loss = torch.linalg.norm(diff, dim=2)
         loss = loss * attention_mask
         return torch.sum(loss) / torch.sum(attention_mask)
         
@@ -115,6 +116,7 @@ class MapperModel(torch.nn.Module):
             # label_soft = self.softmax(label).clone() # bad since the gradients all die
             label_soft = label
             label_soft[:, :, ind] = label_soft[:, :, ind] * self.soft_label_value
+            label_soft -= torch.unsqueeze(torch.mean(label_soft, dim=2), 2)
         else:
             label_soft = label
         return label_soft.to(device)

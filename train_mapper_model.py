@@ -43,10 +43,10 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     total = torch.sum(labels != -100)
     loss_f = torch.nn.CrossEntropyLoss()
     loss = loss_f(y_pred.flatten(0, 1), labels.flatten())
-    label_loss = .5 * model.label_loss(z_tilde, batch['attention_mask'])
+    label_loss = .25 * model.label_loss(z_tilde, batch['attention_mask'])
     return loss, label_loss, correct, total
 
-    
+
 def train_epoch(
     y_dataloader: TransformerCompatDataset,
     z_dataloader: TransformerCompatDataset,
