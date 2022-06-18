@@ -139,14 +139,14 @@ def train_model(
         {'params': model.model.parameters(), 'lr': 3e-5, 'weight_decay': 1e-4},
         {'params': itertools.chain(model.yzdecoding.parameters(),
                                    model.zydecoding.parameters()),
-         'lr': 1e-2, 'weight_decay': 1e-5},
+         'lr': 2e-2, 'weight_decay': 1e-5},
         {'params': [model.soft_label_value], 'lr':0,# 1e-3,
          'weight_decay': 0},
         ])
     scheduler = LambdaLR(optimizer, lr_lambda=
         [
             lambda epoch:1,
-            lambda epoch:max(1e-5,.95**epoch),
+            lambda epoch:max(6e-5,.85**epoch),
             lambda epoch:1
         ]
         )
