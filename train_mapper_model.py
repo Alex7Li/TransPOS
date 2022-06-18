@@ -139,7 +139,8 @@ def train_model(
         {'params': itertools.chain(model.yzdecoding.parameters(),
                                    model.zydecoding.parameters()),
          'lr': 1e-4, 'weight_decay': 6e-5},
-        {'params': [model.soft_label_value], 'lr': 1e-3, 'weight_decay': 0},
+        {'params': [model.soft_label_value], 'lr':0,# 1e-3,
+         'weight_decay': 0},
         ])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.3, patience=8, verbose=True)
     best_validation_acc = 0
