@@ -40,7 +40,7 @@ class MapperModel(torch.nn.Module):
         self.model.to(device)
         self.decoderDropout = .05
         # Conversion from hard label to soft label
-        self.soft_label_value = torch.nn.Parameter(torch.tensor(3))
+        self.soft_label_value = torch.nn.Parameter(torch.tensor(3.0, dtype=torch.float32))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
         decoder_hidden_dim = 512
         decoder_hidden_2_dim = 512
