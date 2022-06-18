@@ -20,6 +20,7 @@ import torch.optim.lr_scheduler
 device = "cuda" if torch.cuda.is_available() else "cpu"
 batch_size = 16
 
+
 def compose_loss(batch, model: MapperModel, input_label="y"):
     """
     Compute KL(D_z(E(x)), D_y(E(x),y), y) as described in
@@ -40,8 +41,10 @@ def compose_loss(batch, model: MapperModel, input_label="y"):
     y_pred = F.softmax(y_tilde, dim=2)
     correct = torch.sum(torch.argmax(y_pred, dim=2) == labels)
     total = torch.sum(labels != -100)
-    loss = torch.nn.CrossEntropyLoss()  # This line might be wrong
-    return loss(y_pred.flatten(0, 1), labels.flatten()), correct, total
+    loss_f = torch.nn.CrossEntropyLoss()
+    loss = loss_f(y_pred.flatten(0, 1), labels.flatten())
+    label_loss = 3 * model.label_loss(z_tilde, batch['attention_mask'])
+    return loss, label_loss, correct, total
 
 
 def train_epoch(
@@ -52,26 +55,32 @@ def train_epoch(
 ):
     model.train()
     n_iters = min(len(y_dataloader), len(z_dataloader))
-    sum_train_loss = 0
+    sum_kl_loss = 0
+    sum_label_loss = 0
     correct_y = 0
     correct_z = 0
     total_y = 0
     total_z = 0
+    pbar = tqdm(zip(y_dataloader, z_dataloader), total=n_iters)
     # Iterate until either dataset is exhausted.
-    for batch_y, batch_z in tqdm(zip(y_dataloader, z_dataloader),total=n_iters):
-        ly, cy, ty = compose_loss(batch_y, model, "y")
-        lz, cz, tz = compose_loss(batch_z, model, "z")
+    for batch_y, batch_z in pbar:
+        ly, lly, cy, ty = compose_loss(batch_y, model, "y")
+        lz, llz, cz, tz = compose_loss(batch_z, model, "z")
         loss = ly + lz
-        loss.backward()
+        label_loss = lly + llz
+        total_loss = loss + label_loss
+        pbar.set_description(f"CE:{loss:.2f}, soft_label:{label_loss:.2f}")
+        total_loss.backward()
         correct_y += cy
         total_y += ty
         correct_z += cz
         total_z += tz
         optimizer.step()
         optimizer.zero_grad()
-        sum_train_loss = loss.detach()
+        sum_kl_loss += loss.detach()
+        sum_label_loss += loss.detach()
     print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
-    return sum_train_loss / n_iters
+    return sum_kl_loss / n_iters, sum_label_loss / n_iters
 
 
 def get_validation_predictions(model: MapperModel, shared_val_set):
@@ -134,10 +143,10 @@ def train_model(
     #     Test
     #    valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
     for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
-        train_loss = train_epoch(
+        kl_loss, label_loss = train_epoch(
             y_dataloader, z_dataloader, model, optimizer
         )
-        print(f"Epoch {epoch_index} Train KL Loss: {train_loss}")
+        print(f"Epoch {epoch_index} Train KL Loss: {kl_loss} Train label loss: {label_loss}")
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
@@ -180,4 +189,4 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
 
 
 if __name__ == "__main__":
-    main("tweebank", "ark", "vinai/bertweet-large")
+    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)

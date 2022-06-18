@@ -39,21 +39,43 @@ class MapperModel(torch.nn.Module):
             embedding_dim_size = 1024
         self.model.to(device)
         self.decoderDropout = .05
-        decoder_hidden_dim = 256
-        decoder_hidden_2_dim = 256
         # Conversion from hard label to soft label
-        self.soft_label_value = torch.nn.Parameter(torch.tensor(4.0))
+        self.soft_label_value = torch.nn.Parameter(torch.tensor(5.5))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
+        decoder_hidden_dim = 512
+        decoder_hidden_2_dim = 512
         self.yzdecoding = nn.Sequential(
-            nn.Linear(embedding_dim_size + n_y_labels, n_z_labels),
+            nn.Linear(embedding_dim_size + n_y_labels, decoder_hidden_dim),
+            nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
+            nn.Dropout(self.decoderDropout),
+            nn.Linear(decoder_hidden_dim,decoder_hidden_2_dim),
+            nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
+            nn.Dropout(self.decoderDropout),
+            nn.Linear(decoder_hidden_2_dim,n_z_labels),
             )
         self.zydecoding = nn.Sequential(
-            nn.Linear(embedding_dim_size + n_z_labels, n_y_labels),
+            nn.Linear(embedding_dim_size + n_z_labels, decoder_hidden_dim),
+            nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
+            nn.Dropout(self.decoderDropout),
+            nn.Linear(decoder_hidden_dim,decoder_hidden_2_dim),
+            nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
+            nn.Dropout(self.decoderDropout),
+            nn.Linear(decoder_hidden_2_dim,n_y_labels),
             )
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
         self.harden_label = False
 
+    def label_loss(self, soft_label, attention_mask):
+        # Penalty for the soft label not looking like
+        # a label generated from the hard_to_soft label function
+        B, sentence_length, n_classes = soft_label.shape
+        hard_label = torch.argmax(soft_label, dim=2)
+        realistic_soft = hardToSoftLabel(hard_label, n_classes, self.soft_label_value, 0)
+        loss = torch.linalg.norm(realistic_soft - soft_label, dim=2)
+        loss = loss * attention_mask
+        return torch.sum(loss) / torch.sum(attention_mask)
+        
 
     def encode(self, batch: dict) -> torch.Tensor:
         """
