@@ -71,7 +71,7 @@ def train_epoch(
         label_loss = alpha * (lly + llz)
         total_loss = cross_entropy_loss + label_loss
         postfix_dict = {'CE': cross_entropy_loss.item()}
-        if alpha > 0:
+        if alpha != 0:
             postfix_dict.update({'label': label_loss.item()/alpha})
         pbar.set_postfix(postfix_dict)
         total_loss.backward()
@@ -187,7 +187,7 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
         shared_val_dataset = create_tweebank_ark_dataset()
     mapped_model = train_model(
         model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path,
-        load_weights=load_cached_weights, alpha=.001
+        load_weights=load_cached_weights, alpha=alpha
     )
     # After 10 epochs:
     # Val Acc Y: 92.12633451957295% Val Acc Z 92.48220640569394%
@@ -195,4 +195,4 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
 
 
 if __name__ == "__main__":
-    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False, alpha=.01)
+    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False, alpha=0)
