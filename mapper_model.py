@@ -22,6 +22,7 @@ def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value, 
         std=torch.ones(one_hot.shape,
         device=one_hot.device, dtype=torch.float)) * std \
             + one_hot * soft_label_value
+    soft_label -= torch.unsqueeze(torch.mean(soft_label, dim=2),2)
     return soft_label
 
 class MapperModel(torch.nn.Module):
@@ -72,7 +73,9 @@ class MapperModel(torch.nn.Module):
         B, sentence_length, n_classes = soft_label.shape
         hard_label = torch.argmax(soft_label, dim=2)
         realistic_soft = hardToSoftLabel(hard_label, n_classes, self.soft_label_value, 0)
-        loss = torch.linalg.norm(realistic_soft - soft_label, dim=2)
+        diff = soft_label - realistic_soft
+        centered = diff - torch.unsqueeze(torch.mean(diff, dim=2), 2)
+        loss = torch.linalg.norm(centered, dim=2)
         loss = loss * attention_mask
         return torch.sum(loss) / torch.sum(attention_mask)
         
@@ -114,7 +117,6 @@ class MapperModel(torch.nn.Module):
             label_soft[:, :, ind] = label_soft[:, :, ind] * self.soft_label_value
         else:
             label_soft = label
-        label_soft -= torch.unsqueeze(torch.mean(label_soft, dim=2),2)
         return label_soft.to(device)
 
     def decode_y(self, e: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
