@@ -4,6 +4,7 @@ from mapper_model import MapperModel
 import dataloading_utils
 from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
 import torch
+from collections import defaultdict
 from functools import partial
 from tqdm import tqdm as std_tqdm
 tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
@@ -25,15 +26,12 @@ from transformers import get_scheduler
 class MapperTrainingParameters:
     batch_size = 16
     def __init__(self) -> None:
-        self.alpha = 0.0
+        self.alpha = None
         self.margin = 0.3
-        self.middle_accuracy_loss = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    def use_supervision(self, new_alpha, new_beta):
+    def use_supervision(self, new_alpha):
         self.alpha = new_alpha
-        self.beta = new_beta
-        self.middle_accuracy_loss = torch.nn.HuberLoss(delta=2.0)
 
 
 def compose_loss(batch, model: MapperModel, globals: MapperTrainingParameters, input_label="y"):
@@ -44,7 +42,7 @@ def compose_loss(batch, model: MapperModel, globals: MapperTrainingParameters, i
     (If input_label is z, compute the other term, but the
     variable names will assume the first term)
     """
-    decode_y = model.decode_y if input_label == "y" else model.decode_z
+    # decode_y = model.decode_y if input_label == "y" else model.decode_z
     decode_z = model.decode_z if input_label == "y" else model.decode_y
     supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
     supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
@@ -53,27 +51,23 @@ def compose_loss(batch, model: MapperModel, globals: MapperTrainingParameters, i
     labels = batch["labels"]
     del batch["labels"]
     e_y = model.encode(batch)
-    z_tilde = decode_y(e_y, labels)
+    # z_tilde = decode_y(e_y, labels)
+    z_tilde = supervisor_z(e_y)
     y_tilde = decode_z(e_y, z_tilde)
     y_pred_probs = F.softmax(y_tilde, dim=2)
     y_pred = torch.argmax(y_pred_probs, dim=2)
     correct = torch.sum(y_pred == labels)
     total = torch.sum(labels != -100)
     loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
-    loss = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
-    middle_loss = torch.tensor(0.0, dtype=torch.float).to(globals.device)
-    supervision_loss = torch.tensor(0.0, dtype=torch.float).to(globals.device)
-    if globals.middle_accuracy_loss is not None:
+    losses = {}
+    losses['full CE'] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
+    if globals.alpha is not None:
         # supervisor should be accurate
         super_y_logits = supervisor_y(e_y)
         super_probs = F.softmax(super_y_logits, dim=2)
-        supervision_loss = loss_f(super_probs.flatten(0, 1),
-            labels.flatten())
-        # middle layer should be like the supervised output
-        super_z_logits = supervisor_z(e_y)
-        middle_loss += globals.middle_accuracy_loss(
-            z_tilde, super_z_logits)
-    return loss, middle_loss, supervision_loss, correct, total
+        losses['supervised CE'] = loss_f(super_probs.flatten(0, 1),
+            labels.flatten()) * globals.alpha
+    return losses, correct, total
 
 
 def train_epoch(
@@ -85,8 +79,7 @@ def train_epoch(
 ):
     model.train()
     n_iters = min(len(y_dataloader), len(z_dataloader))
-    sum_kl_loss = 0
-    sum_label_loss = 0
+    sum_losses = defaultdict(lambda:0.0)
     correct_y = 0
     correct_z = 0
     total_y = 0
@@ -94,18 +87,15 @@ def train_epoch(
     pbar = tqdm(zip(y_dataloader, z_dataloader), total=n_iters)
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in pbar:
-        ly, ply, suply, cy, ty = compose_loss(batch_y, model, globals, "y")
-        lz, plz, suplz, cz, tz = compose_loss(batch_z, model, globals, "z")
-        cross_entropy_loss = ly + lz
-        middle_loss = globals.alpha * (ply + plz)
-        supervised_loss = globals.beta * (suply + suplz)
-        total_loss = cross_entropy_loss + middle_loss
-        postfix_dict = {'CE': cross_entropy_loss.item()}
-        if globals.alpha != 0:
-            postfix_dict.update({'middle': middle_loss.item()/globals.alpha})
-        if globals.beta != 0:
-            postfix_dict.update({'supervised': supervised_loss.item()/globals.beta})
-        pbar.set_postfix(postfix_dict)
+        batch_loss_y, cy, ty = compose_loss(batch_y, model, globals, "y")
+        batch_loss_z, cz, tz = compose_loss(batch_z, model, globals, "z")
+        losses = batch_loss_y
+        total_loss = torch.tensor(0.0)
+        for k, v in batch_loss_z.items():
+            losses[k] += v
+            total_loss += losses[k]
+            sum_losses[k] = sum_losses[k] * .95 + float(losses[k].detach()) *.05
+        pbar.set_postfix({k: v.item() for k,v in losses.items()})
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -114,10 +104,8 @@ def train_epoch(
         total_y += ty
         correct_z += cz
         total_z += tz
-        sum_kl_loss += cross_entropy_loss.detach()
-        sum_label_loss += middle_loss.detach()
+
     print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
-    return sum_kl_loss / n_iters, sum_label_loss / n_iters
 
 
 def get_validation_predictions(model: MapperModel, shared_val_set, globals):
@@ -175,7 +163,7 @@ def train_model(
             model.zydecoding.parameters(),
             model.ydecoding.parameters(),
             model.zdecoding.parameters()),
-         'lr': 5e-5, 'weight_decay': 1e-6},
+         'lr': 2e-5, 'weight_decay': 1e-6},
         {'params': [model.soft_label_value], 'lr':1e-3,
          'weight_decay': 0},
         ])
@@ -194,10 +182,9 @@ def train_model(
     #     Test
     #    valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
     for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
-        kl_loss, label_loss = train_epoch(
+        train_epoch(
             y_dataloader, z_dataloader, model, optimizer, globals
         )
-        print(f"Epoch {epoch_index} Train CE Loss: {kl_loss} Train pseudolabel loss: {label_loss}")
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
@@ -211,14 +198,16 @@ def train_model(
 
 
 
-def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_weights=True, alpha=.01):
+def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10,
+         load_cached_weights=True, globals=None):
+    if globals == None:
+        globals = MapperTrainingParameters()
+        globals.use_supervision(1.0)
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )
     y_dataset = training.get_dataset(y_dataset_name, "unshared")
     z_dataset = training.get_dataset(z_dataset_name, "unshared")
-    globals = MapperTrainingParameters()
-    globals.use_supervision(.1, 1)
     y_dataloader = training.get_dataloader(
         model_name, y_dataset, MapperTrainingParameters.batch_size, shuffle=True
     )
@@ -244,4 +233,4 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
 if __name__ == "__main__":
     main("tweebank", "ark", "vinai/bertweet-large",
          load_cached_weights=False,
-         n_epochs=20,alpha=0)
+         n_epochs=20)
