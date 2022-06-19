@@ -94,12 +94,7 @@ class MapperModel(torch.nn.Module):
         elif len(label.shape) == 3 and self.harden_label:
             # label is of shape [batch, L, n_labels]
             ind = torch.argmax(label, dim=2)
-            # Clone here is required; it prevents a error
-            # with torch not being able to make the gradients flow backwards
-            # label_soft = self.softmax(label).clone() # bad since the gradients all die
-            label_soft = label
-            label_soft[:, :, ind] = label_soft[:, :, ind] * self.soft_label_value
-            label_soft -= torch.unsqueeze(torch.mean(label_soft, dim=2), 2)
+            label_soft = hardToSoftLabel(ind, n_labels, self.soft_label_value)
         else:
             label_soft = label
         return label_soft.to(device)
