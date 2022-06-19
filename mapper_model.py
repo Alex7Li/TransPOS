@@ -32,26 +32,30 @@ class MapperModel(torch.nn.Module):
         embedding_dim_size = 1024
         if base_transformer_name == 'vinai/bertweet-large':
             embedding_dim_size = 1024
-        self.decoderDropout = .1
+        self.decoderDropout = .5
         decoder_hidden_dim = 512
         decoder_hidden_2_dim = 512
         # Conversion from hard label to soft label
         self.soft_label_value = torch.nn.Parameter(torch.tensor(4.5, dtype=torch.float32))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
-        self.yzdecoding = nn.Sequential(
-            nn.Linear(embedding_dim_size + n_y_labels, decoder_hidden_dim),
+        self.yzdecoding_1 = nn.Sequential(
+            nn.Linear(n_y_labels, decoder_hidden_dim),
             nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
             nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_dim,decoder_hidden_2_dim),
+            )
+        self.yzdecoding_2 = nn.Sequential(
+            nn.Linear(decoder_hidden_dim + embedding_dim_size, decoder_hidden_2_dim),
             nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
             nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_2_dim,n_z_labels),
-            )
-        self.zydecoding = nn.Sequential(
-            nn.Linear(embedding_dim_size + n_z_labels, decoder_hidden_dim),
+            nn.Linear(decoder_hidden_2_dim, n_z_labels),
+        )
+        self.zydecoding_1 = nn.Sequential(
+            nn.Linear(n_z_labels, decoder_hidden_dim),
             nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_dim,decoder_hidden_2_dim),
+            nn.Dropout(self.decoderDropout)
+            )
+        self.zydecoding_2 = nn.Sequential(
+            nn.Linear(decoder_hidden_dim + embedding_dim_size,decoder_hidden_2_dim),
             nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
             nn.Dropout(self.decoderDropout),
             nn.Linear(decoder_hidden_2_dim,n_y_labels),
@@ -106,8 +110,9 @@ class MapperModel(torch.nn.Module):
         y: batch of integer label or estimated vector softmax estimate of Y of size n_y_labels.
         """
         y = self.preprocess_label(y, self.n_y_labels).clone()
-        ycat = torch.cat([e, y], dim=2)
-        pred_z = self.yzdecoding(ycat)
+        y_embed = self.yzdecoding_1(y)
+        ycat = torch.cat([e, y_embed], dim=2)
+        pred_z = self.yzdecoding_2(ycat)
         return pred_z
 
     def decode_z(self, e: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
@@ -117,6 +122,7 @@ class MapperModel(torch.nn.Module):
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
         z = self.preprocess_label(z, self.n_z_labels).clone()
-        zcat = torch.cat([e, z], dim=2)
-        pred_y = self.zydecoding(zcat)
+        z_embed = self.zydecoding_1(z)
+        zcat = torch.cat([e, z_embed], dim=2)
+        pred_y = self.zydecoding_2(zcat)
         return pred_y

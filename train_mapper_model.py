@@ -174,13 +174,18 @@ def train_model(
         model.load_state_dict(torch.load(save_path))
         print(f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs")
     optimizer = torch.optim.NAdam([
-        {'params': model.model.parameters(),
+        {'params': itertools.chain(
+            model.model.parameters(),
+            model.ydecoding.parameters(),
+            model.zdecoding.parameters()
+        ),
             'lr': 1e-5, 'weight_decay': 1e-4},
         {'params': itertools.chain(
-            model.yzdecoding.parameters(),
-            model.zydecoding.parameters(),
-            model.ydecoding.parameters(),
-            model.zdecoding.parameters()),
+            model.yzdecoding_1.parameters(),
+            model.zydecoding_1.parameters(),
+            model.yzdecoding_2.parameters(),
+            model.zydecoding_2.parameters()
+            ),
          'lr': 2e-5, 'weight_decay': 1e-6},
         {'params': [model.soft_label_value], 'lr':1e-3,
          'weight_decay': 0},
@@ -188,7 +193,7 @@ def train_model(
     scheduler = LambdaLR(optimizer, lr_lambda=
         [
         lambda epoch:1.0 - epoch/n_epochs,
-        lambda epoch:1.0 - epoch/n_epochs,
+        lambda epoch:0 if epoch < 3 else 1.0 - epoch/n_epochs,
         lambda epoch:1.0 - epoch/n_epochs
         ]
         )
