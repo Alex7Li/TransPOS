@@ -136,11 +136,11 @@ def get_validation_predictions(model: MapperModel, shared_val_set,
             z_pred = torch.argmax(model.decode_y(e, labels_y[-1]), dim=2)
             y_pred = torch.argmax(model.decode_z(e, labels_z[-1]), dim=2)
         elif inference_type == "normal":
-            z_pred = torch.argmax(model.ydecoding(e), dim=2)
-            y_pred = torch.argmax(model.zdecoding(e), dim=2)
+            y_pred = torch.argmax(model.ydecoding(e), dim=2)
+            z_pred = torch.argmax(model.zdecoding(e), dim=2)
         elif inference_type == "no_label_input":
-            z_pred = torch.argmax(model.decode_y(e, model.zdecoding(e)), dim=2)
-            y_pred = torch.argmax(model.decode_z(e, model.ydecoding(e)), dim=2)
+            z_pred = torch.argmax(model.decode_y(e, model.ydecoding(e)), dim=2)
+            y_pred = torch.argmax(model.decode_z(e, model.zdecoding(e)), dim=2)
         else:
             raise NotImplementedError()
         predicted_z.append(z_pred)
