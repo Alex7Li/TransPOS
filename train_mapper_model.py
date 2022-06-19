@@ -32,7 +32,7 @@ class MapperTrainingParameters:
         self.alpha = new_alpha
 
 
-def compose_loss(batch, model: MapperModel, globals: MapperTrainingParameters, input_label="y"):
+def compose_loss(batch, model: MapperModel, parameters: MapperTrainingParameters, input_label="y"):
     """
     Compute KL(D_z(E(x)), D_y(E(x),y), y) as described in
     the paper.
@@ -45,7 +45,7 @@ def compose_loss(batch, model: MapperModel, globals: MapperTrainingParameters, i
     supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
     supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
 
-    batch = {k: v.to(globals.device) for k, v in batch.items()}
+    batch = {k: v.to(parameters.device) for k, v in batch.items()}
     labels = batch["labels"]
     del batch["labels"]
     e_y = model.encode(batch)
@@ -59,12 +59,12 @@ def compose_loss(batch, model: MapperModel, globals: MapperTrainingParameters, i
     loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
     losses = {}
     losses['full CE'] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
-    if globals.alpha is not None:
+    if parameters.alpha is not None:
         # supervisor should be accurate
         super_y_logits = supervisor_y(e_y)
         super_probs = F.softmax(super_y_logits, dim=2)
         losses['supervised CE'] = loss_f(super_probs.flatten(0, 1),
-            labels.flatten()) * globals.alpha
+            labels.flatten()) * parameters.alpha
     return losses, correct, total
 
 
@@ -73,7 +73,7 @@ def train_epoch(
     z_dataloader: TransformerCompatDataset,
     model: MapperModel,
     optimizer: torch.optim.Optimizer,
-    globals: MapperTrainingParameters
+    parameters: MapperTrainingParameters
 ):
     model.train()
     n_iters = min(len(y_dataloader), len(z_dataloader))
@@ -85,17 +85,18 @@ def train_epoch(
     pbar = tqdm(zip(y_dataloader, z_dataloader), total=n_iters)
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in pbar:
-        batch_loss_y, cy, ty = compose_loss(batch_y, model, globals, "y")
-        batch_loss_z, cz, tz = compose_loss(batch_z, model, globals, "z")
+        batch_loss_y, cy, ty = compose_loss(batch_y, model, parameters, "y")
+        batch_loss_z, cz, tz = compose_loss(batch_z, model, parameters, "z")
         losses = batch_loss_y
-        total_loss = torch.tensor(0.0)
+        total_loss = torch.tensor(0.0).to(parameters.device)
         for k, v in batch_loss_z.items():
             losses[k] += v
-            total_loss += v.item()
+        for k, batch_loss in losses.items():
+            total_loss += batch_loss
             if k in avg_losses:
-                avg_losses[k] = v.item()
+                avg_losses[k] = batch_loss.item()
             else:
-                avg_losses[k] = avg_losses[k] * .95 + v.item() *.05
+                avg_losses[k] = avg_losses[k] * .95 + batch_loss.item() *.05
         pbar.set_postfix({k: v.item() for k,v in losses.items()})
         total_loss.backward()
         optimizer.step()
