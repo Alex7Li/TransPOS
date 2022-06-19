@@ -39,18 +39,30 @@ class MapperModel(torch.nn.Module):
         if base_transformer_name == 'vinai/bertweet-large':
             embedding_dim_size = 1024
         self.model.to(device)
-        self.decoderDropout = .05
+        self.decoderDropout = .1
+        decoder_hidden_dim = 512
+        decoder_hidden_2_dim = 512
         # Conversion from hard label to soft label
         self.soft_label_value = torch.nn.Parameter(torch.tensor(4.0, dtype=torch.float32))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
-        self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
-        self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
-        shared_w =  torch.rand((n_y_labels, n_z_labels))*.2 - .1
-        self.yzdecoding = nn.Linear(n_y_labels, n_z_labels)
-        self.zydecoding = nn.Linear(n_z_labels, n_y_labels)
-        self.yzdecoding.weight = nn.Parameter(shared_w.T)
-        self.zydecoding.weight = nn.Parameter(shared_w)
-        
+        self.yzdecoding = nn.Sequential(
+            nn.Linear(embedding_dim_size + n_y_labels, decoder_hidden_dim),
+            nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
+            nn.Dropout(self.decoderDropout),
+            nn.Linear(decoder_hidden_dim,decoder_hidden_2_dim),
+            nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
+            nn.Dropout(self.decoderDropout),
+            nn.Linear(decoder_hidden_2_dim,n_z_labels),
+            )
+        self.zydecoding = nn.Sequential(
+            nn.Linear(embedding_dim_size + n_z_labels, decoder_hidden_dim),
+            nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
+            nn.Dropout(self.decoderDropout),
+            nn.Linear(decoder_hidden_dim,decoder_hidden_2_dim),
+            nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
+            nn.Dropout(self.decoderDropout),
+            nn.Linear(decoder_hidden_2_dim,n_y_labels),
+            )
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
         self.harden_label = False
@@ -103,8 +115,8 @@ class MapperModel(torch.nn.Module):
         y: batch of integer label or estimated vector softmax estimate of Y of size n_y_labels.
         """
         y = self.preprocess_label(y, self.n_y_labels).clone()
-        ze = self.zdecoding(e)
-        pred_z = self.yzdecoding(y) + ze
+        ycat = torch.cat([e, y], dim=2)
+        pred_z = self.yzdecoding(ycat)
         return pred_z
 
     def decode_z(self, e: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
@@ -114,6 +126,6 @@ class MapperModel(torch.nn.Module):
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
         z = self.preprocess_label(z, self.n_z_labels).clone()
-        ye = self.ydecoding(e)
-        pred_y = self.zydecoding(z) + ye
+        zcat = torch.cat([e, z], dim=2)
+        pred_y = self.zydecoding(zcat)
         return pred_y
