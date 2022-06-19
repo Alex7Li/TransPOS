@@ -55,19 +55,6 @@ class MapperModel(torch.nn.Module):
         # is tricked into thinking they are the same or something
         self.harden_label = False
 
-    def label_loss(self, soft_label, attention_mask):
-        # Penalty for the soft label not looking like
-        # a label generated from the hard_to_soft label function
-        B, sentence_length, n_classes = soft_label.shape
-        hard_label = torch.argmax(soft_label, dim=2)
-        realistic_soft = hardToSoftLabel(hard_label, n_classes, self.soft_label_value, 0)
-        # Normalize
-        soft_label -= torch.unsqueeze(torch.mean(soft_label, dim=2), 2)
-        diff = soft_label - realistic_soft
-        loss = torch.linalg.norm(diff, dim=2)
-        loss = loss * attention_mask
-        return torch.sum(loss) / torch.sum(attention_mask)
-        
 
     def encode(self, batch: dict) -> torch.Tensor:
         """

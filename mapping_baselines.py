@@ -31,7 +31,7 @@ def normal_model_baseline(train_dataset_name, model_name):
 
     # validation
     preds, labels = training.validation_epoch(trained_model, val_dataloader)
-    return dataloading_utils.get_acc(preds, labels)
+    return dataloading_utils.get_acc(preds, labels), trained_model
 
 # 3 Epochs:
 # On ark: 93.5943%
@@ -40,9 +40,9 @@ def normal_model_baseline(train_dataset_name, model_name):
 # Accuracy on ark: 94.3950%                        
 # Accuracy on tweebank: 94.7509% (94.7954% on second run)                           
 def main_normal_model():
-  ark_acc = normal_model_baseline("tweebank", "vinai/bertweet-large")
+  ark_acc, _ = normal_model_baseline("tweebank", "vinai/bertweet-large")
   print(f"Accuracy on ark: {100*ark_acc:.4f}%")
-  #twee_acc = normal_model_baseline("ark", "vinai/bertweet-large")
+  #twee_acc, _ = normal_model_baseline("ark", "vinai/bertweet-large")
   #print(f"Accuracy on tweebank: {100*twee_acc:.4f}%")
 
 if __name__ == '__main__':
