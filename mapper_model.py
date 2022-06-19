@@ -38,7 +38,6 @@ class MapperModel(torch.nn.Module):
         embedding_dim_size = 1024
         if base_transformer_name == 'vinai/bertweet-large':
             embedding_dim_size = 1024
-        self.model.to(device)
         self.decoderDropout = .1
         decoder_hidden_dim = 512
         decoder_hidden_2_dim = 512
@@ -63,9 +62,13 @@ class MapperModel(torch.nn.Module):
             nn.Dropout(self.decoderDropout),
             nn.Linear(decoder_hidden_2_dim,n_y_labels),
             )
+        self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
+        self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
+
         # Make the soft labels look similar to the hard labels so the model
         # is tricked into thinking they are the same or something
         self.harden_label = False
+        self.to(device)
 
 
     def encode(self, batch: dict) -> torch.Tensor:

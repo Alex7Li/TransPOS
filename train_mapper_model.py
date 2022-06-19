@@ -13,29 +13,27 @@ import torch.nn.functional as F
 from pathlib import Path
 import math
 import os
+import gc
 from torch.optim.lr_scheduler import LambdaLR
 from typing import List, Optional, Tuple
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 import torch.optim.lr_scheduler
 import mapping_baselines
+from transformers import get_scheduler
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class MapperTrainingParameters:
+    batch_size = 16
     def __init__(self) -> None:
-        self.batch_size = 16
         self.alpha = 0.0
-        self.y_supervisor = None
-        self.z_supervisor = None
+        self.margin = 0.3
+        self.middle_accuracy_loss = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    def use_supervision(self, new_alpha, y_dataset_name='tweebank', z_dataset_name='ark', model_name='vinai/bertweet-large'):
+    def use_supervision(self, new_alpha, new_beta):
         self.alpha = new_alpha
-        print("Getting Y supervisor, will train if no weights are cached")
-        y_acc, self.y_supervisor = mapping_baselines.normal_model_baseline(y_dataset_name, model_name)
-        print(f"Y supervisor accuracy {y_acc}")
-        print("Getting Z supervisor, will train if no weights are cached")
-        z_acc, self.z_supervisor = mapping_baselines.normal_model_baseline(z_dataset_name, model_name)
-        print(f"Z supervisor accuracy {z_acc}")
+        self.beta = new_beta
+        self.middle_accuracy_loss = torch.nn.HuberLoss(delta=2.0)
 
 
 def compose_loss(batch, model: MapperModel, globals: MapperTrainingParameters, input_label="y"):
@@ -48,25 +46,34 @@ def compose_loss(batch, model: MapperModel, globals: MapperTrainingParameters, i
     """
     decode_y = model.decode_y if input_label == "y" else model.decode_z
     decode_z = model.decode_z if input_label == "y" else model.decode_y
-    supervisor = globals.y_supervisor if input_label == "y" else globals.z_supervisor
+    supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
+    supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
 
-    batch = {k: v.to(device) for k, v in batch.items()}
+    batch = {k: v.to(globals.device) for k, v in batch.items()}
     labels = batch["labels"]
     del batch["labels"]
     e_y = model.encode(batch)
     z_tilde = decode_y(e_y, labels)
     y_tilde = decode_z(e_y, z_tilde)
-    y_pred_soft = F.softmax(y_tilde, dim=2)
-    y_pred = torch.argmax(y_pred_soft, dim=2)
+    y_pred_probs = F.softmax(y_tilde, dim=2)
+    y_pred = torch.argmax(y_pred_probs, dim=2)
     correct = torch.sum(y_pred == labels)
     total = torch.sum(labels != -100)
     loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
-    loss = loss_f(y_pred_soft.flatten(0, 1), labels.flatten())
-    pseudolabel_loss = torch.tensor(0)
-    if supervisor is not None:
-        super_logits = supervisor(**batch).logits
-        pseudolabel_loss += F.kl_div(y_pred, super_logits)
-    return loss, pseudolabel_loss, correct, total
+    loss = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
+    middle_loss = torch.tensor(0.0, dtype=torch.float).to(globals.device)
+    supervision_loss = torch.tensor(0.0, dtype=torch.float).to(globals.device)
+    if globals.middle_accuracy_loss is not None:
+        # supervisor should be accurate
+        super_y_logits = supervisor_y(e_y)
+        super_probs = F.softmax(super_y_logits, dim=2)
+        supervision_loss = loss_f(super_probs.flatten(0, 1),
+            labels.flatten())
+        # middle layer should be like the supervised output
+        super_z_logits = supervisor_z(e_y)
+        middle_loss += globals.middle_accuracy_loss(
+            z_tilde, super_z_logits)
+    return loss, middle_loss, supervision_loss, correct, total
 
 
 def train_epoch(
@@ -87,24 +94,28 @@ def train_epoch(
     pbar = tqdm(zip(y_dataloader, z_dataloader), total=n_iters)
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in pbar:
-        ly, ply, cy, ty = compose_loss(batch_y, model, globals, "y")
-        lz, plz, cz, tz = compose_loss(batch_z, model, globals, "z")
+        ly, ply, suply, cy, ty = compose_loss(batch_y, model, globals, "y")
+        lz, plz, suplz, cz, tz = compose_loss(batch_z, model, globals, "z")
         cross_entropy_loss = ly + lz
-        psuedolabel_loss = globals.alpha * (ply + plz)
-        total_loss = cross_entropy_loss + psuedolabel_loss
+        middle_loss = globals.alpha * (ply + plz)
+        supervised_loss = globals.beta * (suply + suplz)
+        total_loss = cross_entropy_loss + middle_loss
         postfix_dict = {'CE': cross_entropy_loss.item()}
         if globals.alpha != 0:
-            postfix_dict.update({'psuedo': psuedolabel_loss.item()/globals.alpha})
+            postfix_dict.update({'middle': middle_loss.item()/globals.alpha})
+        if globals.beta != 0:
+            postfix_dict.update({'supervised': supervised_loss.item()/globals.beta})
         pbar.set_postfix(postfix_dict)
         total_loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
         correct_y += cy
         total_y += ty
         correct_z += cz
         total_z += tz
-        optimizer.step()
-        optimizer.zero_grad()
         sum_kl_loss += cross_entropy_loss.detach()
-        sum_label_loss += psuedolabel_loss.detach()
+        sum_label_loss += middle_loss.detach()
     print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
     return sum_kl_loss / n_iters, sum_label_loss / n_iters
 
@@ -113,10 +124,10 @@ def get_validation_predictions(model: MapperModel, shared_val_set, globals):
     model.eval()
     y_dataset, z_dataset = shared_val_set
     y_dataloader = training.get_dataloader(
-        model.base_transformer_name, y_dataset, globals.batch_size, shuffle=False
+        model.base_transformer_name, y_dataset, MapperTrainingParameters.batch_size, shuffle=False
     )
     z_dataloader = training.get_dataloader(
-        model.base_transformer_name, z_dataset, globals.batch_size, shuffle=False
+        model.base_transformer_name, z_dataset, MapperTrainingParameters.batch_size, shuffle=False
     )
     predicted_y = []
     predicted_z = []
@@ -157,21 +168,26 @@ def train_model(
         model.load_state_dict(torch.load(save_path))
         print(f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs")
     optimizer = torch.optim.NAdam([
-        {'params': itertools.chain(model.model.parameters()),
-            'lr': 3e-5, 'weight_decay': 1e-4},
-        {'params': itertools.chain(model.yzdecoding.parameters(),
-            model.zydecoding.parameters()),
-         'lr': 3e-3, 'weight_decay': 1e-6},
+        {'params': model.model.parameters(),
+            'lr': 1e-5, 'weight_decay': 1e-4},
+        {'params': itertools.chain(
+            model.yzdecoding.parameters(),
+            model.zydecoding.parameters(),
+            model.ydecoding.parameters(),
+            model.zdecoding.parameters()),
+         'lr': 5e-5, 'weight_decay': 1e-6},
         {'params': [model.soft_label_value], 'lr':1e-3,
          'weight_decay': 0},
         ])
-    scheduler = LambdaLR(optimizer, lr_lambda=
-        [
-            lambda epoch:0 if epoch < 1 else 1,
-            lambda epoch:max(1e-2,.5**epoch),
-            lambda epoch:1
-        ]
-        )
+    # scheduler = LambdaLR(optimizer, lr_lambda=
+    #     [ lambda epoch:1, lambda epoch:1, lambda epoch:1 ]
+    #     )
+    scheduler: torch.optim.lr_scheduler.LinearLR = get_scheduler(
+        name="linear",
+        optimizer=optimizer,
+        num_warmup_steps=0,
+        num_training_steps=min(len(y_dataloader), len(z_dataloader)) * n_epochs,
+    ) # type:ignore
     best_validation_acc = 0
     valid_acc = 0
     #if shared_val_dataset is not None:
@@ -202,17 +218,17 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
     y_dataset = training.get_dataset(y_dataset_name, "unshared")
     z_dataset = training.get_dataset(z_dataset_name, "unshared")
     globals = MapperTrainingParameters()
-    globals.use_supervision(.1)
+    globals.use_supervision(.1, 1)
     y_dataloader = training.get_dataloader(
-        model_name, y_dataset, globals.batch_size, shuffle=True
+        model_name, y_dataset, MapperTrainingParameters.batch_size, shuffle=True
     )
     z_dataloader = training.get_dataloader(
-        model_name, z_dataset, globals.batch_size, shuffle=True
+        model_name, z_dataset, MapperTrainingParameters.batch_size, shuffle=True
     )
     model = MapperModel(
         "vinai/bertweet-large", y_dataset.num_labels, z_dataset.num_labels
     )
-    model.to(device)
+    model.to(globals.device)
     shared_val_dataset = None
     if y_dataset_name == "tweebank" and z_dataset_name == "ark":
         shared_val_dataset = create_tweebank_ark_dataset()
@@ -226,5 +242,6 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10, load_cached_we
 
 
 if __name__ == "__main__":
-    torch.autograd.set_detect_anomaly(True)
-    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False, alpha=0)
+    main("tweebank", "ark", "vinai/bertweet-large",
+         load_cached_weights=False,
+         n_epochs=20,alpha=0)

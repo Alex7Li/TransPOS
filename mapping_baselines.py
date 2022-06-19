@@ -31,7 +31,7 @@ def normal_model_baseline(train_dataset_name, model_name):
 
     # validation
     preds, labels = training.validation_epoch(trained_model, val_dataloader)
-    return dataloading_utils.get_acc(preds, labels), trained_model
+    return dataloading_utils.get_acc(preds, labels), trained_model.eval()
 
 # 3 Epochs:
 # On ark: 93.5943%
