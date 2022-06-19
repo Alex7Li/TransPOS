@@ -110,7 +110,8 @@ def train_epoch(
     print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
 
 
-def get_validation_predictions(model: MapperModel, shared_val_set):
+def get_validation_predictions(model: MapperModel, shared_val_set,
+        inference_type="ours"):
     model.eval()
     y_dataset, z_dataset = shared_val_set
     y_dataloader = training.get_dataloader(
@@ -131,14 +132,29 @@ def get_validation_predictions(model: MapperModel, shared_val_set):
         labels_y.append(y_batch['labels'])
         labels_z.append(z_batch['labels'])
         e = model.encode(y_batch)
-        z_pred = torch.argmax(model.decode_y(e, labels_y[-1]), dim=2)
-        y_pred = torch.argmax(model.decode_z(e, labels_z[-1]), dim=2)
+        if inference_type == "ours":
+            z_pred = torch.argmax(model.decode_y(e, labels_y[-1]), dim=2)
+            y_pred = torch.argmax(model.decode_z(e, labels_z[-1]), dim=2)
+        elif inference_type == "normal":
+            z_pred = torch.argmax(model.ydecoding(e), dim=2)
+            y_pred = torch.argmax(model.zdecoding(e), dim=2)
+        elif inference_type == "no_label_input":
+            z_pred = torch.argmax(model.decode_y(e, model.zdecoding(e)), dim=2)
+            y_pred = torch.argmax(model.decode_z(e, model.ydecoding(e)), dim=2)
+        else:
+            raise NotImplementedError()
         predicted_z.append(z_pred)
         predicted_y.append(y_pred)
     return flatten_preds_and_labels(predicted_y, labels_y), flatten_preds_and_labels(predicted_z, labels_z)
 
-def model_validation_acc(model: MapperModel, shared_val_dataset) -> Tuple[float, float]:
-    (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(model, shared_val_dataset)
+def model_validation_acc(model: MapperModel, shared_val_dataset, do_all_losses) -> Tuple[float, float]:
+    if do_all_losses:
+        for val_type in ['normal', 'no_label_input']:
+            (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(model, shared_val_dataset, 'normal')
+            y_acc = dataloading_utils.get_acc(y_preds, y_labels)
+            z_acc = dataloading_utils.get_acc(z_preds, z_labels)
+            print(f"{val_type} y_acc: {y_acc} z_acc: {z_acc}")
+    (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(model, shared_val_dataset, 'ours')
     y_acc = dataloading_utils.get_acc(y_preds, y_labels)
     z_acc = dataloading_utils.get_acc(z_preds, z_labels)
     return y_acc, z_acc
@@ -169,15 +185,13 @@ def train_model(
         {'params': [model.soft_label_value], 'lr':1e-3,
          'weight_decay': 0},
         ])
-    # scheduler = LambdaLR(optimizer, lr_lambda=
-    #     [ lambda epoch:1, lambda epoch:1, lambda epoch:1 ]
-    #     )
-    scheduler: torch.optim.lr_scheduler.LinearLR = get_scheduler(
-        name="linear",
-        optimizer=optimizer,
-        num_warmup_steps=0,
-        num_training_steps=min(len(y_dataloader), len(z_dataloader)) * n_epochs,
-    ) # type:ignore
+    scheduler = LambdaLR(optimizer, lr_lambda=
+        [
+        lambda epoch:1.0 - epoch/n_epochs,
+        lambda epoch:1.0 - epoch/n_epochs,
+        lambda epoch:1.0 - epoch/n_epochs
+        ]
+        )
     best_validation_acc = 0
     valid_acc = 0
     for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
@@ -185,7 +199,7 @@ def train_model(
             y_dataloader, z_dataloader, model, optimizer, parameters
         )
         if shared_val_dataset is not None:
-            valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
+            valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset, epoch_index % 3 == 0)
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
             print(f"Val Acc Y: {valid_acc_y*100:.3f}% Val Acc Z {valid_acc_z*100:.3f}%  Soft Label: {model.soft_label_value:.5f}")
         if valid_acc >= best_validation_acc:
