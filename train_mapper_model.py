@@ -19,7 +19,6 @@ from torch.optim.lr_scheduler import LambdaLR
 from typing import List, Optional, Tuple
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 import torch.optim.lr_scheduler
-import mapping_baselines
 from transformers import get_scheduler
 
 
@@ -108,7 +107,7 @@ def train_epoch(
     print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
 
 
-def get_validation_predictions(model: MapperModel, shared_val_set, globals):
+def get_validation_predictions(model: MapperModel, shared_val_set):
     model.eval()
     y_dataset, z_dataset = shared_val_set
     y_dataloader = training.get_dataloader(
@@ -136,7 +135,7 @@ def get_validation_predictions(model: MapperModel, shared_val_set, globals):
     return flatten_preds_and_labels(predicted_y, labels_y), flatten_preds_and_labels(predicted_z, labels_z)
 
 def model_validation_acc(model: MapperModel, shared_val_dataset) -> Tuple[float, float]:
-    (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(model, shared_val_dataset, globals)
+    (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(model, shared_val_dataset)
     y_acc = dataloading_utils.get_acc(y_preds, y_labels)
     z_acc = dataloading_utils.get_acc(z_preds, z_labels)
     return y_acc, z_acc
@@ -150,7 +149,7 @@ def train_model(
     n_epochs,
     save_path,
     load_weights,
-    globals: MapperTrainingParameters
+    parameters: MapperTrainingParameters
 ):
     if load_weights and os.path.exists(save_path):
         model.load_state_dict(torch.load(save_path))
@@ -178,12 +177,9 @@ def train_model(
     ) # type:ignore
     best_validation_acc = 0
     valid_acc = 0
-    #if shared_val_dataset is not None:
-    #     Test
-    #    valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
     for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
         train_epoch(
-            y_dataloader, z_dataloader, model, optimizer, globals
+            y_dataloader, z_dataloader, model, optimizer, parameters
         )
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset)
@@ -199,10 +195,10 @@ def train_model(
 
 
 def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10,
-         load_cached_weights=True, globals=None):
-    if globals == None:
-        globals = MapperTrainingParameters()
-        globals.use_supervision(1.0)
+         load_cached_weights=True, parameters=None):
+    if parameters == None:
+        parameters = MapperTrainingParameters()
+        parameters.use_supervision(1.0)
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )
@@ -217,13 +213,13 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10,
     model = MapperModel(
         "vinai/bertweet-large", y_dataset.num_labels, z_dataset.num_labels
     )
-    model.to(globals.device)
+    model.to(parameters.device)
     shared_val_dataset = None
     if y_dataset_name == "tweebank" and z_dataset_name == "ark":
         shared_val_dataset = create_tweebank_ark_dataset()
     mapped_model = train_model(
         model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path,
-        load_cached_weights, globals
+        load_cached_weights, parameters
     )
     # After 10 epochs:
     # Val Acc Y: 92.12633451957295% Val Acc Z 92.48220640569394%
