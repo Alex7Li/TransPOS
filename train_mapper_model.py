@@ -78,7 +78,7 @@ def train_epoch(
 ):
     model.train()
     n_iters = min(len(y_dataloader), len(z_dataloader))
-    sum_losses = defaultdict(lambda:0.0)
+    avg_losses = defaultdict(lambda:0.0)
     correct_y = 0
     correct_z = 0
     total_y = 0
@@ -92,8 +92,11 @@ def train_epoch(
         total_loss = torch.tensor(0.0)
         for k, v in batch_loss_z.items():
             losses[k] += v
-            total_loss += losses[k]
-            sum_losses[k] = sum_losses[k] * .95 + float(losses[k].detach()) *.05
+            total_loss += v.item()
+            if k in avg_losses:
+                avg_losses[k] = v.item()
+            else:
+                avg_losses[k] = avg_losses[k] * .95 + v.item() *.05
         pbar.set_postfix({k: v.item() for k,v in losses.items()})
         total_loss.backward()
         optimizer.step()
