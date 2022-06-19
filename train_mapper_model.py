@@ -26,7 +26,6 @@ class MapperTrainingParameters:
     batch_size = 16
     def __init__(self) -> None:
         self.alpha = None
-        self.margin = 0.3
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def use_supervision(self, new_alpha):
