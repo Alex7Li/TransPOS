@@ -14,9 +14,8 @@ import torch.nn.functional as F
 from pathlib import Path
 import math
 import os
-import gc
 from torch.optim.lr_scheduler import LambdaLR
-from typing import List, Optional, Tuple
+from typing import Tuple
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 import torch.optim.lr_scheduler
 from transformers import get_scheduler
@@ -181,10 +180,8 @@ def train_model(
         ),
             'lr': 1e-5, 'weight_decay': 1e-4},
         {'params': itertools.chain(
-            model.yzdecoding_1.parameters(),
-            model.zydecoding_1.parameters(),
-            model.yzdecoding_2.parameters(),
-            model.zydecoding_2.parameters()
+            model.yzdecoding.parameters(),
+            model.zydecoding.parameters(),
             ),
          'lr': 2e-5, 'weight_decay': 1e-6},
         {'params': [model.soft_label_value], 'lr':1e-3,
