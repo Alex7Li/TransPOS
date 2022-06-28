@@ -118,7 +118,7 @@ def train_epoch(
                 avg_losses[k] = batch_loss.item()
             else:
                 avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
-        if tqdm:
+        if parameters.tqdm:
             pbar.set_postfix({k: v.item() for k, v in losses.items()})
         total_loss.backward()
         optimizer.step()
