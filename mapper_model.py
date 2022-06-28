@@ -66,7 +66,7 @@ class Label2LabelDecoder(torch.nn.Module):
         rnn_init = torch.stack([self.rnn_init for _ in range(e.shape[0])], dim=1)
         # rnn_init: [n_layers * 2, B, rnn_hidden]
         assert len(rnn_init.shape) == 3
-        y, _ = self.yRNN.forward(y, self.rnn_init)
+        y, _ = self.yRNN.forward(y, rnn_init)
         ycat = torch.cat([e, y], dim=2)
         pred_z = self.xydecoding(ycat)
         return pred_z
