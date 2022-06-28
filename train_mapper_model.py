@@ -23,10 +23,10 @@ from transformers import get_scheduler
 
 class MapperTrainingParameters:
     batch_size = 16
-    def __init__(self) -> None:
+    def __init__(self, freeze_encoder=False) -> None:
         self.alpha = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
+        self.freeze_encoder = freeze_encoder
     def use_supervision(self, new_alpha):
         self.alpha = new_alpha
 
@@ -172,6 +172,8 @@ def train_model(
     if load_weights and os.path.exists(save_path):
         model.load_state_dict(torch.load(save_path))
         print(f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs")
+    for param in model.model.parameters():
+        param.requires_grad = not parameters.freeze_encoder
     optimizer = torch.optim.NAdam([
         {'params': itertools.chain(
             model.model.parameters(),
@@ -190,7 +192,7 @@ def train_model(
     scheduler = LambdaLR(optimizer, lr_lambda=
         [
         lambda epoch:1.0 - epoch/n_epochs,
-        lambda epoch:0 if epoch < 3 else 1.0 - epoch/n_epochs,
+        lambda epoch:1.0 - epoch/n_epochs,
         lambda epoch:1.0 - epoch/n_epochs
         ]
         )

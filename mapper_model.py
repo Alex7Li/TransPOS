@@ -20,10 +20,11 @@ def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value):
 
 class Label2LabelDecoder(torch.nn.Module):
     def __init__(self, embedding_dim: int, n_y_labels: int,
-                 n_z_labels: int, use_x=True):
+                 n_z_labels: int, soft_label_value: torch.Tensor, use_x=True):
         super().__init__()
         self.n_y_labels = n_y_labels
         y_embed_dim = 512
+        self.soft_label_value = soft_label_value
         self.ydecoding = nn.Sequential(
             nn.Linear(n_y_labels, y_embed_dim),
             nn.LayerNorm(y_embed_dim)
@@ -58,9 +59,9 @@ class Label2LabelDecoder(torch.nn.Module):
             label_soft = label
         return label_soft.to(device)
 
-    def forward(self, e: torch.Tensor, y: torch.Tensor):
+    def forward(self, e: torch.Tensor, y: torch.Tensor, soft_label_value):
         # e: [batch_size B, sentence_length L, embedding_dim]
-        y = self.preprocess_label(y).clone()
+        y = self.preprocess_label(y, soft_label_value).clone()
         #  y: [B, L, n_labels]
         y = self.ydecoding(y)
         rnn_init = torch.stack([self.rnn_init for _ in range(e.shape[0])], dim=1)
@@ -88,8 +89,8 @@ class MapperModel(torch.nn.Module):
         # Conversion from hard label to soft label
         self.soft_label_value = torch.nn.Parameter(torch.tensor(4.5, dtype=torch.float32))
         self.register_parameter(name='soft_label', param=self.soft_label_value)
-        self.yzdecoding = Label2LabelDecoder(embedding_dim_size, n_y_labels, n_z_labels)
-        self.zydecoding = Label2LabelDecoder(embedding_dim_size, n_z_labels, n_y_labels)
+        self.yzdecoding = Label2LabelDecoder(embedding_dim_size, n_y_labels, n_z_labels, self.soft_label_value)
+        self.zydecoding = Label2LabelDecoder(embedding_dim_size, n_z_labels, n_y_labels, self.soft_label_value)
         self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
         self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
 
