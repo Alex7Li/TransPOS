@@ -1,5 +1,3 @@
-from glob import glob
-from augmented_datasets import get_dataloader
 from mapper_model import MapperModel
 import dataloading_utils
 from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
@@ -7,6 +5,7 @@ import torch
 from collections import defaultdict
 from functools import partial
 from tqdm import tqdm as std_tqdm
+
 tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
 import training
 import itertools
@@ -15,23 +14,36 @@ from pathlib import Path
 import math
 import os
 from torch.optim.lr_scheduler import LambdaLR
-from typing import Tuple
+from typing import Tuple, Optional
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 import torch.optim.lr_scheduler
-from transformers import get_scheduler
 
 
 class MapperTrainingParameters:
     batch_size = 16
-    def __init__(self, freeze_encoder=False) -> None:
-        self.alpha = None
+
+    def __init__(
+        self,
+        freeze_encoder=False,
+        total_epochs=20,
+        only_supervised_epochs=10,
+        alpha: Optional[float] = 1.0,
+    ) -> None:
+        super()
+        self.alpha = alpha
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.freeze_encoder = freeze_encoder
-    def use_supervision(self, new_alpha):
-        self.alpha = new_alpha
+        self.total_epochs = total_epochs
+        self.only_supervised_epochs = only_supervised_epochs
 
 
-def compose_loss(batch, model: MapperModel, parameters: MapperTrainingParameters, input_label="y"):
+def compose_loss(
+    batch,
+    model: MapperModel,
+    parameters: MapperTrainingParameters,
+    input_label: str,
+    epoch_ind: int,
+):
     """
     Compute KL(D_z(E(x)), D_y(E(x),y), y) as described in
     the paper.
@@ -57,13 +69,15 @@ def compose_loss(batch, model: MapperModel, parameters: MapperTrainingParameters
     total = torch.sum(labels != -100)
     loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
     losses = {}
-    losses['full CE'] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
+    if epoch_ind >= parameters.only_supervised_epochs:
+        losses["full CE"] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
     if parameters.alpha is not None:
         # supervisor should be accurate
         super_y_logits = supervisor_y(e_y)
         super_probs = F.softmax(super_y_logits, dim=2)
-        losses['supervised CE'] = loss_f(super_probs.flatten(0, 1),
-            labels.flatten()) * parameters.alpha
+        losses["supervised CE"] = (
+            loss_f(super_probs.flatten(0, 1), labels.flatten()) * parameters.alpha
+        )
     return losses, correct, total
 
 
@@ -72,11 +86,12 @@ def train_epoch(
     z_dataloader: TransformerCompatDataset,
     model: MapperModel,
     optimizer: torch.optim.Optimizer,
-    parameters: MapperTrainingParameters
+    parameters: MapperTrainingParameters,
+    cur_epoch: int,
 ):
     model.train()
     n_iters = min(len(y_dataloader), len(z_dataloader))
-    avg_losses = defaultdict(lambda:0.0)
+    avg_losses = defaultdict(lambda: 0.0)
     correct_y = 0
     correct_z = 0
     total_y = 0
@@ -84,8 +99,8 @@ def train_epoch(
     pbar = tqdm(zip(y_dataloader, z_dataloader), total=n_iters)
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in pbar:
-        batch_loss_y, cy, ty = compose_loss(batch_y, model, parameters, "y")
-        batch_loss_z, cz, tz = compose_loss(batch_z, model, parameters, "z")
+        batch_loss_y, cy, ty = compose_loss(batch_y, model, parameters, "y", cur_epoch)
+        batch_loss_z, cz, tz = compose_loss(batch_z, model, parameters, "z", cur_epoch)
         losses = batch_loss_y
         total_loss = torch.tensor(0.0).to(parameters.device)
         for k, v in batch_loss_z.items():
@@ -95,8 +110,8 @@ def train_epoch(
             if k in avg_losses:
                 avg_losses[k] = batch_loss.item()
             else:
-                avg_losses[k] = avg_losses[k] * .95 + batch_loss.item() *.05
-        pbar.set_postfix({k: v.item() for k,v in losses.items()})
+                avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
+        pbar.set_postfix({k: v.item() for k, v in losses.items()})
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -106,18 +121,27 @@ def train_epoch(
         correct_z += cz
         total_z += tz
 
-    print(f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%")
+    print(
+        f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
+    )
 
 
-def get_validation_predictions(model: MapperModel, shared_val_set,
-        inference_type="ours"):
+def get_validation_predictions(
+    model: MapperModel, shared_val_set, inference_type="ours"
+):
     model.eval()
     y_dataset, z_dataset = shared_val_set
     y_dataloader = training.get_dataloader(
-        model.base_transformer_name, y_dataset, MapperTrainingParameters.batch_size, shuffle=False
+        model.base_transformer_name,
+        y_dataset,
+        MapperTrainingParameters.batch_size,
+        shuffle=False,
     )
     z_dataloader = training.get_dataloader(
-        model.base_transformer_name, z_dataset, MapperTrainingParameters.batch_size, shuffle=False
+        model.base_transformer_name,
+        z_dataset,
+        MapperTrainingParameters.batch_size,
+        shuffle=False,
     )
     predicted_y = []
     predicted_z = []
@@ -128,8 +152,8 @@ def get_validation_predictions(model: MapperModel, shared_val_set,
         desc="Predicting Validation labels",
         total=len(y_dataloader),
     ):
-        labels_y.append(y_batch['labels'])
-        labels_z.append(z_batch['labels'])
+        labels_y.append(y_batch["labels"])
+        labels_z.append(z_batch["labels"])
         e = model.encode(y_batch)
         if inference_type == "ours":
             z_pred = torch.argmax(model.decode_y(e, labels_y[-1]), dim=2)
@@ -144,16 +168,33 @@ def get_validation_predictions(model: MapperModel, shared_val_set,
             raise NotImplementedError()
         predicted_z.append(z_pred)
         predicted_y.append(y_pred)
-    return flatten_preds_and_labels(predicted_y, labels_y), flatten_preds_and_labels(predicted_z, labels_z)
+    return flatten_preds_and_labels(predicted_y, labels_y), flatten_preds_and_labels(
+        predicted_z, labels_z
+    )
 
-def model_validation_acc(model: MapperModel, shared_val_dataset, do_all_losses) -> Tuple[float, float]:
-    if do_all_losses:
-        for val_type in ['normal', 'no_label_input']:
-            (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(model, shared_val_dataset, 'normal')
+
+def model_validation_acc(
+    model: MapperModel,
+    shared_val_dataset,
+    cur_epoch: int,
+    parameters: MapperTrainingParameters,
+) -> Tuple[float, float]:
+    if cur_epoch % 3 == 0:  # do all losses
+        for val_type in ["normal", "no_label_input", "ours"]:
+            (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
+                model, shared_val_dataset, val_type
+            )
             y_acc = dataloading_utils.get_acc(y_preds, y_labels)
             z_acc = dataloading_utils.get_acc(z_preds, z_labels)
-            print(f"{val_type} y_acc: {y_acc} z_acc: {z_acc}")
-    (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(model, shared_val_dataset, 'ours')
+            print(f"Val Type {val_type} y_acc: {y_acc} z_acc: {z_acc}")
+    else:
+        if cur_epoch < parameters.only_supervised_epochs:
+            validation_type = "normal"
+        else:
+            validation_type = "ours"
+        (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
+            model, shared_val_dataset, validation_type
+        )
     y_acc = dataloading_utils.get_acc(y_preds, y_labels)
     z_acc = dataloading_utils.get_acc(z_preds, z_labels)
     return y_acc, z_acc
@@ -164,48 +205,72 @@ def train_model(
     y_dataloader,
     z_dataloader,
     shared_val_dataset,
-    n_epochs,
     save_path,
     load_weights,
-    parameters: MapperTrainingParameters
+    parameters: MapperTrainingParameters,
 ):
+    n_epochs = parameters.total_epochs
     if load_weights and os.path.exists(save_path):
         model.load_state_dict(torch.load(save_path))
-        print(f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs")
+        print(
+            f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs"
+        )
     for param in model.model.parameters():
         param.requires_grad = not parameters.freeze_encoder
-    optimizer = torch.optim.NAdam([
-        {'params': itertools.chain(
-            model.model.parameters(),
-            model.ydecoding.parameters(),
-            model.zdecoding.parameters()
-        ),
-            'lr': 1e-5, 'weight_decay': 1e-4},
-        {'params': itertools.chain(
-            model.yzdecoding.parameters(),
-            model.zydecoding.parameters(),
-            ),
-         'lr': 2e-5, 'weight_decay': 1e-6},
-        {'params': [model.soft_label_value], 'lr':1e-3,
-         'weight_decay': 0},
-        ])
-    scheduler = LambdaLR(optimizer, lr_lambda=
+    optimizer = torch.optim.NAdam(
         [
-        lambda epoch:1.0 - epoch/n_epochs,
-        lambda epoch:1.0 - epoch/n_epochs,
-        lambda epoch:1.0 - epoch/n_epochs
+            {
+                "params": itertools.chain(
+                    model.model.parameters(),
+                    model.ydecoding.parameters(),
+                    model.zdecoding.parameters(),
+                ),
+                "lr": 1e-5,
+                "weight_decay": 1e-4,
+            },
+            {
+                "params": itertools.chain(
+                    model.yzdecoding.parameters(),
+                    model.zydecoding.parameters(),
+                ),
+                "lr": 2e-5,
+                "weight_decay": 1e-6,
+            },
         ]
-        )
+    )
+
+    def linear_2_phase(epoch):
+        phase_1_epochs = parameters.only_supervised_epochs
+        phase_2_epochs = n_epochs - phase_1_epochs
+        if epoch < phase_1_epochs:
+            return 1.0 - epoch / phase_1_epochs
+        else:
+            return 1.0 - (epoch - phase_1_epochs) / phase_2_epochs
+
+    scheduler = LambdaLR(
+        optimizer,
+        lr_lambda=[
+            linear_2_phase,
+            linear_2_phase,
+        ],
+    )
     best_validation_acc = 0
     valid_acc = 0
-    for epoch_index in tqdm(range(0, n_epochs), desc="Training epochs",):
+    for epoch_index in tqdm(
+        range(0, n_epochs),
+        desc="Training epochs",
+    ):
         train_epoch(
-            y_dataloader, z_dataloader, model, optimizer, parameters
+            y_dataloader, z_dataloader, model, optimizer, parameters, epoch_index
         )
         if shared_val_dataset is not None:
-            valid_acc_y, valid_acc_z = model_validation_acc(model, shared_val_dataset, epoch_index % 3 == 0)
-            valid_acc = math.sqrt(valid_acc_y * valid_acc_z) # Geometric Mean
-            print(f"Val Acc Y: {valid_acc_y*100:.3f}% Val Acc Z {valid_acc_z*100:.3f}%  Soft Label: {model.soft_label_value:.5f}")
+            valid_acc_y, valid_acc_z = model_validation_acc(
+                model, shared_val_dataset, epoch_index, parameters
+            )
+            valid_acc = math.sqrt(valid_acc_y * valid_acc_z)  # Geometric Mean
+            print(
+                f"Val Acc Y: {valid_acc_y*100:.3f}% Val Acc Z {valid_acc_z*100:.3f}%  Soft Label: {model.soft_label_value:.5f}"
+            )
         if valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)
@@ -214,12 +279,17 @@ def train_model(
     return model
 
 
-
-def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10,
-         load_cached_weights=True, parameters=None):
+def main(
+    y_dataset_name,
+    z_dataset_name,
+    model_name,
+    load_cached_weights=True,
+    parameters=None,
+):
     if parameters == None:
-        parameters = MapperTrainingParameters()
-        parameters.use_supervision(1.0)
+        parameters = MapperTrainingParameters(
+            alpha=1.0, freeze_encoder=False, total_epochs=30, only_supervised_epochs=10
+        )
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )
@@ -239,8 +309,13 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10,
     if y_dataset_name == "tweebank" and z_dataset_name == "ark":
         shared_val_dataset = create_tweebank_ark_dataset()
     mapped_model = train_model(
-        model, y_dataloader, z_dataloader, shared_val_dataset, n_epochs, save_path,
-        load_cached_weights, parameters
+        model,
+        y_dataloader,
+        z_dataloader,
+        shared_val_dataset,
+        save_path,
+        load_cached_weights,
+        parameters,
     )
     # After 10 epochs:
     # Val Acc Y: 92.12633451957295% Val Acc Z 92.48220640569394%
@@ -248,6 +323,4 @@ def main(y_dataset_name, z_dataset_name, model_name, n_epochs=10,
 
 
 if __name__ == "__main__":
-    main("tweebank", "ark", "vinai/bertweet-large",
-         load_cached_weights=False,
-         n_epochs=20)
+    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)

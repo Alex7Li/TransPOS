@@ -27,7 +27,7 @@ from dataloading_utils import (
     flatten_preds_and_labels,
     TransformerCompatDataset,
     get_validation_acc,
-    MergedDataset
+    MergedDataset,
 )
 from ArkDataset.load_ark import load_ark
 from TPANNDataset.load_tpann import load_tpann
@@ -295,11 +295,13 @@ def get_dataset(dataset_name, partition):
         else:
             raise NotImplementedError
     elif partition == "unshared":
-        return UnsharedDataset(MergedDataset(
-            get_dataset(dataset_name, "train"),
-            get_dataset(dataset_name, "val"),
-            get_dataset(dataset_name, "test"),
-        ))
+        return UnsharedDataset(
+            MergedDataset(
+                get_dataset(dataset_name, "train"),
+                get_dataset(dataset_name, "val"),
+                get_dataset(dataset_name, "test"),
+            )
+        )
     else:
         raise NotImplementedError
     return dataset
@@ -559,7 +561,6 @@ def pipeline(hparams, run_aug=False, load_weights=False, use_unshared=False):
         n_epochs,
         hparams["save_path"],
     )
-
 
 
 def run_experiment(run_aug=False):

@@ -20,18 +20,20 @@ from transformers import (
     get_scheduler,
 )
 from torch.utils.data import DataLoader
+
+
 def main():
     tpann_train, tpann_val, tpann_test = load_tpann()
     # Needed Imports
     warnings.filterwarnings("ignore")
 
 
-def get_shared_examples(ark_all, tweebank_all,save=False):
+def get_shared_examples(ark_all, tweebank_all, save=False):
     """Takes as input all examples from ark and twee bank, then returns a list of shared examples of the format
     [shared_x,ark_label,twee_label]"""
-    if os.path.exists('shared_ark_tweebank.pkl'):
+    if os.path.exists("shared_ark_tweebank.pkl"):
         # shared_examples = np.load('shared_ark_tweebank.npy', allow_pickle=True)
-        with open("shared_ark_tweebank.pkl","rb") as file:
+        with open("shared_ark_tweebank.pkl", "rb") as file:
             shared_examples = pickle.load(file)
     else:
         shared_examples = []
@@ -43,9 +45,9 @@ def get_shared_examples(ark_all, tweebank_all,save=False):
         print("Number of shared Examples: ", len(shared_examples))
         if save:
             print("Saving Shared Examples!")
-            with open('shared_ark_tweebank.pkl', 'wb') as file:
-                pickle.dump(shared_examples,file)
-           
+            with open("shared_ark_tweebank.pkl", "wb") as file:
+                pickle.dump(shared_examples, file)
+
     return shared_examples
 
 
@@ -88,13 +90,16 @@ class TweeSharedDataset(torch.utils.data.Dataset):
         y = self.Y[ind]
         return x, y
 
+
 class UnsharedDataset(torch.utils.data.Dataset):
     def __init__(self, full_dataset):
         self.full_dataset = full_dataset
         self.num_labels = full_dataset.num_labels
-        shared_x = [x for x,y,z in shared_examples]
+        shared_x = [x for x, y, z in shared_examples]
         self.index_map = []
-        for i, (x, y) in tqdm(enumerate(full_dataset), desc="Creating unshared dataset"):
+        for i, (x, y) in tqdm(
+            enumerate(full_dataset), desc="Creating unshared dataset"
+        ):
             is_in_shared = False
             for sx in shared_x:
                 if x == sx:
@@ -111,6 +116,7 @@ class UnsharedDataset(torch.utils.data.Dataset):
     def __getitem__(self, ind):
         return self.full_dataset[self.index_map[ind]]
 
+
 def create_tweebank_ark_dataset():
     ark_shared_dataset = ArkSharedDataset(shared_examples)
     twee_shared_dataset = TweeSharedDataset(shared_examples)
@@ -124,7 +130,7 @@ ark_all = ark_train + ark_val + ark_test
 
 tweebank_all = tweebank_train + tweebank_val + tweebank_test
 
-shared_examples = get_shared_examples(ark_all, tweebank_all,save=True)
+shared_examples = get_shared_examples(ark_all, tweebank_all, save=True)
 
 
 if __name__ == "__main__":
