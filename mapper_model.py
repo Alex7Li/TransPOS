@@ -25,12 +25,12 @@ def hardToSoftLabel(
 
 class Label2LabelDecoder(torch.nn.Module):
     def __init__(
-        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, use_x=True
+        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, soft_label_value: float,use_x=True
     ):
         super().__init__()
         self.n_y_labels = n_y_labels
         y_embed_dim = 512
-        self.soft_label_value = torch.tensor(4.5).to(device)
+        self.soft_label_value = torch.tensor(soft_label_value).to(device)
         self.ydecoding = nn.Sequential(
             nn.Linear(n_y_labels, y_embed_dim), nn.LayerNorm(y_embed_dim)
         )
@@ -77,7 +77,7 @@ class Label2LabelDecoder(torch.nn.Module):
 
 
 class MapperModel(torch.nn.Module):
-    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int):
+    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int, soft_label_value: float):
         super().__init__()
         self.base_transformer_name = base_transformer_name
         self.n_y_labels = n_y_labels
@@ -87,8 +87,8 @@ class MapperModel(torch.nn.Module):
         embedding_dim_size = 1024
         if base_transformer_name == "vinai/bertweet-large":
             embedding_dim_size = 1024
-        self.yzdecoding = Label2LabelDecoder(embedding_dim_size, n_y_labels, n_z_labels)
-        self.zydecoding = Label2LabelDecoder(embedding_dim_size, n_z_labels, n_y_labels)
+        self.yzdecoding = Label2LabelDecoder(embedding_dim_size, n_y_labels, n_z_labels, soft_label_value)
+        self.zydecoding = Label2LabelDecoder(embedding_dim_size, n_z_labels, n_y_labels, soft_label_value)
         self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
         self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
 

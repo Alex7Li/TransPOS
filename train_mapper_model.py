@@ -1,3 +1,4 @@
+from pytest import param
 from mapper_model import MapperModel
 import dataloading_utils
 from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
@@ -5,7 +6,7 @@ import torch
 from collections import defaultdict
 from functools import partial
 from tqdm import tqdm as std_tqdm
-
+import numpy as np
 tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
 import training
 import itertools
@@ -20,14 +21,15 @@ import torch.optim.lr_scheduler
 
 
 class MapperTrainingParameters:
-    batch_size = 16
-
     def __init__(
         self,
         freeze_encoder=False,
         total_epochs=20,
         only_supervised_epochs=10,
         alpha: Optional[float] = 1.0,
+        batch_size=16,
+        tqdm=False,
+        soft_label_value=4.5
     ) -> None:
         super()
         self.alpha = alpha
@@ -35,6 +37,9 @@ class MapperTrainingParameters:
         self.freeze_encoder = freeze_encoder
         self.total_epochs = total_epochs
         self.only_supervised_epochs = only_supervised_epochs
+        self.batch_size = batch_size
+        self.tqdm=tqdm
+        self.soft_label_value=soft_label_value
 
 
 def compose_loss(
@@ -90,13 +95,15 @@ def train_epoch(
     cur_epoch: int,
 ):
     model.train()
-    n_iters = min(len(y_dataloader), len(z_dataloader))
     avg_losses = defaultdict(lambda: 0.0)
     correct_y = 0
     correct_z = 0
     total_y = 0
     total_z = 0
-    pbar = tqdm(zip(y_dataloader, z_dataloader), total=n_iters)
+    pbar = zip(y_dataloader, z_dataloader)
+    if parameters.tqdm:
+        n_iters = min(len(y_dataloader), len(z_dataloader))
+        pbar = tqdm(pbar, total=n_iters)
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in pbar:
         batch_loss_y, cy, ty = compose_loss(batch_y, model, parameters, "y", cur_epoch)
@@ -127,31 +134,33 @@ def train_epoch(
 
 
 def get_validation_predictions(
-    model: MapperModel, shared_val_set, inference_type="ours"
+    model: MapperModel, shared_val_set, inference_type: str, parameters: MapperTrainingParameters
 ):
     model.eval()
     y_dataset, z_dataset = shared_val_set
     y_dataloader = training.get_dataloader(
         model.base_transformer_name,
         y_dataset,
-        MapperTrainingParameters.batch_size,
+        parameters.batch_size,
         shuffle=False,
     )
     z_dataloader = training.get_dataloader(
         model.base_transformer_name,
         z_dataset,
-        MapperTrainingParameters.batch_size,
+        parameters.batch_size,
         shuffle=False,
     )
     predicted_y = []
     predicted_z = []
     labels_y = []
     labels_z = []
-    for y_batch, z_batch in tqdm(
-        zip(y_dataloader, z_dataloader),
+    pbar = zip(y_dataloader, z_dataloader)
+    if parameters.tqdm:
+        pbar = tqdm(pbar, 
         desc="Predicting Validation labels",
         total=len(y_dataloader),
-    ):
+        )
+    for y_batch, z_batch in pbar:
         labels_y.append(y_batch["labels"])
         labels_z.append(z_batch["labels"])
         e = model.encode(y_batch)
@@ -182,21 +191,22 @@ def model_validation_acc(
     if cur_epoch % 3 == 0:  # do all losses
         for val_type in ["normal", "no_label_input", "ours"]:
             (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
-                model, shared_val_dataset, val_type
+                model, shared_val_dataset, val_type, parameters
             )
             y_acc = dataloading_utils.get_acc(y_preds, y_labels)
             z_acc = dataloading_utils.get_acc(z_preds, z_labels)
             print(f"Val Type {val_type} y_acc: {y_acc} z_acc: {z_acc}")
     else:
         if cur_epoch < parameters.only_supervised_epochs:
-            validation_type = "normal"
+            val_type = "normal"
         else:
-            validation_type = "ours"
+            val_type = "ours"
         (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
-            model, shared_val_dataset, validation_type
+            model, shared_val_dataset, val_type, parameters
         )
-    y_acc = dataloading_utils.get_acc(y_preds, y_labels)
-    z_acc = dataloading_utils.get_acc(z_preds, z_labels)
+        y_acc = dataloading_utils.get_acc(y_preds, y_labels)
+        z_acc = dataloading_utils.get_acc(z_preds, z_labels)
+        print(f"Val Type {val_type} y_acc: {y_acc} z_acc: {z_acc}")
     return y_acc, z_acc
 
 
@@ -225,7 +235,7 @@ def train_model(
                     model.ydecoding.parameters(),
                     model.zdecoding.parameters(),
                 ),
-                "lr": 1e-5,
+                "lr":2e-5,
                 "weight_decay": 1e-4,
             },
             {
@@ -233,8 +243,8 @@ def train_model(
                     model.yzdecoding.parameters(),
                     model.zydecoding.parameters(),
                 ),
-                "lr": 2e-5,
-                "weight_decay": 1e-6,
+                "lr": 3e-5,
+                "weight_decay": 1e-4,
             },
         ]
     )
@@ -260,6 +270,7 @@ def train_model(
         range(0, n_epochs),
         desc="Training epochs",
     ):
+        print(f"Epoch {epoch_index}")
         train_epoch(
             y_dataloader, z_dataloader, model, optimizer, parameters, epoch_index
         )
@@ -268,14 +279,18 @@ def train_model(
                 model, shared_val_dataset, epoch_index, parameters
             )
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z)  # Geometric Mean
-            print(
-                f"Val Acc Y: {valid_acc_y*100:.3f}% Val Acc Z {valid_acc_z*100:.3f}%"
-            )
         if valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)
             torch.save(model.state_dict(), save_path)
         scheduler.step()
+    for soft_label_value in np.arange(1.0, 6.0, .25):
+        print(f"Soft value {soft_label_value}")
+        model.yzdecoding.soft_label_value = torch.tensor(soft_label_value)
+        model.zydecoding.soft_label_value = torch.tensor(soft_label_value)
+        model_validation_acc(
+            model, shared_val_dataset, -1, parameters
+        )
     return model
 
 
@@ -296,13 +311,14 @@ def main(
     y_dataset = training.get_dataset(y_dataset_name, "unshared")
     z_dataset = training.get_dataset(z_dataset_name, "unshared")
     y_dataloader = training.get_dataloader(
-        model_name, y_dataset, MapperTrainingParameters.batch_size, shuffle=True
+        model_name, y_dataset, parameters.batch_size, shuffle=True
     )
     z_dataloader = training.get_dataloader(
-        model_name, z_dataset, MapperTrainingParameters.batch_size, shuffle=True
+        model_name, z_dataset, parameters.batch_size, shuffle=True
     )
     model = MapperModel(
-        "vinai/bertweet-large", y_dataset.num_labels, z_dataset.num_labels
+        "vinai/bertweet-large", y_dataset.num_labels, z_dataset.num_labels,
+        parameters.soft_label_value
     )
     model.to(parameters.device)
     shared_val_dataset = None
