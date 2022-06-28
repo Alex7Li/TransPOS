@@ -269,7 +269,7 @@ def train_model(
             )
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z)  # Geometric Mean
             print(
-                f"Val Acc Y: {valid_acc_y*100:.3f}% Val Acc Z {valid_acc_z*100:.3f}%  Soft Label: {model.soft_label_value:.5f}"
+                f"Val Acc Y: {valid_acc_y*100:.3f}% Val Acc Z {valid_acc_z*100:.3f}%"
             )
         if valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
