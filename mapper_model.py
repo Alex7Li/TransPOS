@@ -21,6 +21,7 @@ def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value):
 class Label2LabelDecoder(torch.nn.Module):
     def __init__(self, embedding_dim: int, n_y_labels: int,
                  n_z_labels: int, use_x=True):
+        super().__init__()
         self.n_y_labels = n_y_labels
         y_embed_dim = 512
         self.ydecoding = nn.Sequential(
