@@ -25,7 +25,7 @@ def hardToSoftLabel(
 
 class Label2LabelDecoder(torch.nn.Module):
     def __init__(
-        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, soft_label_value: float,use_x=True
+        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, soft_label_value: float, use_x=True
     ):
         super().__init__()
         self.n_y_labels = n_y_labels
@@ -44,6 +44,7 @@ class Label2LabelDecoder(torch.nn.Module):
             y_embed_dim, rnn_hidden, num_layers=2, batch_first=True, bidirectional=True
         )
         xy_hidden = 512
+        self.use_x = use_x
         if use_x:
             self.xydecoding = nn.Sequential(
                 nn.Linear(2 * rnn_hidden + embedding_dim, xy_hidden),
@@ -71,7 +72,10 @@ class Label2LabelDecoder(torch.nn.Module):
         # rnn_init: [n_layers * 2, B, rnn_hidden]
         assert len(rnn_init.shape) == 3
         y, _ = self.yRNN.forward(y, rnn_init)
-        ycat = torch.cat([e, y], dim=2)
+        if self.use_x:
+            ycat = torch.cat([e, y], dim=2)
+        else:
+            ycat = y
         pred_z = self.xydecoding(ycat)
         return pred_z
 

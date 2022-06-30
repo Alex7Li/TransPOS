@@ -308,7 +308,8 @@ def main(
 ):
     if parameters == None:
         parameters = MapperTrainingParameters(
-            alpha=1.0, freeze_encoder=False, total_epochs=30, only_supervised_epochs=10
+            alpha=1.0, freeze_encoder=False, total_epochs=30,
+            only_supervised_epochs=10, decoder_use_x=False
         )
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
