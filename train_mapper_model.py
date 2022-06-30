@@ -174,11 +174,11 @@ def get_validation_predictions(
             y_pred = torch.argmax(model.ydecoding(e), dim=2)
             z_pred = torch.argmax(model.zdecoding(e), dim=2)
         elif inference_type == "no_label_input":
-            z_pred = torch.argmax(model.decode_y(e, model.ydecoding(e)), dim=2)
             y_pred = torch.argmax(model.decode_z(e, model.zdecoding(e)), dim=2)
+            z_pred = torch.argmax(model.decode_y(e, model.ydecoding(e)), dim=2)
         elif inference_type == "independent":
-            z_pred = torch.argmax(model.ydecoding(e) + model.decode_y(e, y_true), dim=2)
-            y_pred = torch.argmax(model.zdecoding(e) + model.decode_z(e, z_true), dim=2)
+            y_pred = torch.argmax(model.ydecoding(e) + model.decode_z(e, z_true), dim=2)
+            z_pred = torch.argmax(model.zdecoding(e) + model.decode_y(e, y_true), dim=2)
         else:
             raise NotImplementedError()
         labels_y.append(y_true)
