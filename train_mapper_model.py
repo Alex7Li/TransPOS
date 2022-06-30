@@ -197,7 +197,10 @@ def model_validation_acc(
     parameters: MapperTrainingParameters,
 ) -> Tuple[float, float]:
     if cur_epoch % 3 == 0:  # do all losses
-        for val_type in ["normal", "no_label_input", "ours", "independent"]:
+        val_types = ["normal", "no_label_input", "ours"]
+        if not parameters.decoder_use_x:
+            val_types += ["independent"]
+        for val_type in val_types:
             (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
                 model, shared_val_dataset, val_type, parameters
             )
