@@ -164,23 +164,25 @@ def get_validation_predictions(
         total=len(y_dataloader),
         )
     for y_batch, z_batch in pbar:
-        labels_y.append(y_batch["labels"])
-        labels_z.append(z_batch["labels"])
+        y_true =  y_batch['labels']
+        z_true =  z_batch['labels']
         e = model.encode(y_batch)
         if inference_type == "ours":
-            z_pred = torch.argmax(model.decode_y(e, labels_y[-1]), dim=2)
-            y_pred = torch.argmax(model.decode_z(e, labels_z[-1]), dim=2)
+            z_pred = torch.argmax(model.decode_y(e, y_true), dim=2)
+            y_pred = torch.argmax(model.decode_z(e, z_true), dim=2)
         elif inference_type == "normal":
             y_pred = torch.argmax(model.ydecoding(e), dim=2)
             z_pred = torch.argmax(model.zdecoding(e), dim=2)
         elif inference_type == "no_label_input":
-            z_pred = torch.argmax(model.decode_y(e, model.ydecoding(e)), dim=2)
             y_pred = torch.argmax(model.decode_z(e, model.zdecoding(e)), dim=2)
+            z_pred = torch.argmax(model.decode_y(e, model.ydecoding(e)), dim=2)
         elif inference_type == "independent":
-            z_pred = torch.argmax(model.ydecoding(e) + model.decode_y(e, labels_y[-1]), dim=2)
-            y_pred = torch.argmax(model.zdecoding(e) + model.decode_z(e, labels_z[-1]), dim=2)
+            y_pred = torch.argmax(model.ydecoding(e) + model.decode_z(e, z_true), dim=2)
+            z_pred = torch.argmax(model.zdecoding(e) + model.decode_y(e, y_true), dim=2)
         else:
             raise NotImplementedError()
+        labels_y.append(y_true)
+        labels_z.append(z_true)
         predicted_z.append(z_pred)
         predicted_y.append(y_pred)
     return flatten_preds_and_labels(predicted_y, labels_y), flatten_preds_and_labels(
@@ -195,7 +197,10 @@ def model_validation_acc(
     parameters: MapperTrainingParameters,
 ) -> Tuple[float, float]:
     if cur_epoch % 3 == 0:  # do all losses
-        for val_type in ["normal", "no_label_input", "ours", "independent"]:
+        val_types = ["normal", "no_label_input", "ours"]
+        if not parameters.decoder_use_x:
+            val_types += ["independent"]
+        for val_type in val_types:
             (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
                 model, shared_val_dataset, val_type, parameters
             )
@@ -293,13 +298,6 @@ def train_model(
             print("Saving this model")
             torch.save(model.state_dict(), save_path)
         scheduler.step()
-    for soft_label_value in np.arange(-1.0, 5.0, .25):
-        print(f"Soft value {soft_label_value}")
-        model.yzdecoding.soft_label_value = torch.tensor(soft_label_value)
-        model.zydecoding.soft_label_value = torch.tensor(soft_label_value)
-        model_validation_acc(
-            model, shared_val_dataset, n_epochs + (1 - n_epochs) % 3, parameters
-        )
     return model
 
 
