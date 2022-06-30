@@ -29,7 +29,8 @@ class MapperTrainingParameters:
         alpha: Optional[float] = 1.0,
         batch_size=16,
         tqdm=False,
-        soft_label_value=4.5
+        soft_label_value=4.5,
+        decoder_use_x=True
     ) -> None:
         super()
         self.alpha = alpha
@@ -40,6 +41,7 @@ class MapperTrainingParameters:
         self.batch_size = batch_size
         self.tqdm=tqdm
         self.soft_label_value=soft_label_value
+        self.decoder_use_x=decoder_use_x
 
 
 def compose_loss(
@@ -267,11 +269,13 @@ def train_model(
     )
     best_validation_acc = 0
     valid_acc = 0
-    for epoch_index in tqdm(
-        range(0, n_epochs),
-        desc="Training epochs",
-    ):
-        print(f"Epoch {epoch_index}")
+    pbar = range(0, n_epochs)
+    if parameters.tqdm:
+        pbar = tqdm(range(0, n_epochs),
+            desc="Training epochs",
+        )
+    for epoch_index in pbar:
+        print(f"Epoch {epoch_index + 1}/{n_epochs}")
         train_epoch(
             y_dataloader, z_dataloader, model, optimizer, parameters, epoch_index
         )
@@ -319,7 +323,7 @@ def main(
     )
     model = MapperModel(
         "vinai/bertweet-large", y_dataset.num_labels, z_dataset.num_labels,
-        parameters.soft_label_value
+        parameters.soft_label_value, parameters.decoder_use_x
     )
     model.to(parameters.device)
     shared_val_dataset = None

@@ -77,18 +77,19 @@ class Label2LabelDecoder(torch.nn.Module):
 
 
 class MapperModel(torch.nn.Module):
-    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int, soft_label_value: float):
+    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int, soft_label_value: float, decoder_use_x=True):
         super().__init__()
         self.base_transformer_name = base_transformer_name
         self.n_y_labels = n_y_labels
         self.n_z_labels = n_z_labels
         self.model = AutoModel.from_pretrained(base_transformer_name)
-        # TODO: How to get this automatically?
-        embedding_dim_size = 1024
+        embedding_dim_size = 1024  # model dependant
         if base_transformer_name == "vinai/bertweet-large":
             embedding_dim_size = 1024
-        self.yzdecoding = Label2LabelDecoder(embedding_dim_size, n_y_labels, n_z_labels, soft_label_value)
-        self.zydecoding = Label2LabelDecoder(embedding_dim_size, n_z_labels, n_y_labels, soft_label_value)
+        self.yzdecoding = Label2LabelDecoder(
+            embedding_dim_size, n_y_labels, n_z_labels, soft_label_value, decoder_use_x)
+        self.zydecoding = Label2LabelDecoder(
+            embedding_dim_size, n_z_labels, n_y_labels, soft_label_value, decoder_use_x)
         self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
         self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
 
