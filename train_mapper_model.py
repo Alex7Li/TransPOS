@@ -287,14 +287,15 @@ def train_model(
         if valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)
+            print("Saving this model")
             torch.save(model.state_dict(), save_path)
         scheduler.step()
-    for soft_label_value in np.arange(1.0, 6.0, .25):
+    for soft_label_value in np.arange(-1.0, 5.0, .25):
         print(f"Soft value {soft_label_value}")
         model.yzdecoding.soft_label_value = torch.tensor(soft_label_value)
         model.zydecoding.soft_label_value = torch.tensor(soft_label_value)
         model_validation_acc(
-            model, shared_val_dataset, -1, parameters
+            model, shared_val_dataset, n_epochs + (1 - n_epochs) % 3, parameters
         )
     return model
 
