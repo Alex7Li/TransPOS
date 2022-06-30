@@ -238,7 +238,7 @@ def train_model(
                     model.ydecoding.parameters(),
                     model.zdecoding.parameters(),
                 ),
-                "lr":2e-5,
+                "lr":3e-5,
                 "weight_decay": 1e-4,
             },
             {
