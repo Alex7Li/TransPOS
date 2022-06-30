@@ -1,12 +1,15 @@
 import torch
-import training
 import torch.nn.functional as F
-from typing import Union
 import torch.nn as nn
-from transformers import AutoModelForTokenClassification, AutoModel
+import torch.nn.init
+from transformers import AutoModel
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value):
+
+def hardToSoftLabel(
+    hard_label: torch.Tensor, n_classes: int, soft_label_value: torch.Tensor
+):
     BS, SEQ_LEN = hard_label.shape
     # Ensure the ignored indicies don't crash the code.
     hard_label = torch.clone(hard_label)
@@ -16,58 +19,85 @@ def hardToSoftLabel(hard_label: torch.Tensor, n_classes: int, soft_label_value):
     # it want to be zero but really we want it to be positive
     one_hot = one_hot.float().to(device)
     soft_label = one_hot * soft_label_value
-    soft_label -= torch.unsqueeze(torch.mean(soft_label, dim=2),2)
+    soft_label -= torch.unsqueeze(torch.mean(soft_label, dim=2), 2)
     return soft_label
 
+
+class Label2LabelDecoder(torch.nn.Module):
+    def __init__(
+        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, soft_label_value: float, use_x=True
+    ):
+        super().__init__()
+        self.n_y_labels = n_y_labels
+        y_embed_dim = 512
+        self.soft_label_value = torch.tensor(soft_label_value).to(device)
+        self.ydecoding = nn.Sequential(
+            nn.Linear(n_y_labels, y_embed_dim), nn.LayerNorm(y_embed_dim)
+        )
+        rnn_hidden = 512
+        n_rnn_layers = 2
+        w = torch.empty(2 * n_rnn_layers, rnn_hidden, dtype=torch.float32)
+        torch.nn.init.kaiming_normal_(w)
+        self.rnn_init = torch.nn.Parameter(w)
+        self.register_parameter(name="rnn_init", param=self.rnn_init)
+        self.yRNN = torch.nn.GRU(
+            y_embed_dim, rnn_hidden, num_layers=2, batch_first=True, bidirectional=True
+        )
+        xy_hidden = 512
+        self.use_x = use_x
+        if use_x:
+            self.xydecoding = nn.Sequential(
+                nn.Linear(2 * rnn_hidden + embedding_dim, xy_hidden),
+                nn.LayerNorm(xy_hidden),
+                nn.GELU(),
+                nn.Linear(xy_hidden, n_z_labels),
+            )
+        else:
+            self.xydecoding = nn.Linear(2 * rnn_hidden, n_z_labels)
+
+    def preprocess_label(self, label):
+        if len(label.shape) == 2:
+            # label is of shape [batch, L]
+            label_soft = hardToSoftLabel(label, self.n_y_labels, self.soft_label_value)
+        else:
+            label_soft = label
+        return label_soft.to(device)
+
+    def forward(self, e: torch.Tensor, y: torch.Tensor):
+        # e: [batch_size B, sentence_length L, embedding_dim]
+        y = self.preprocess_label(y).clone()
+        #  y: [B, L, n_labels]
+        y = self.ydecoding(y)
+        rnn_init = torch.stack([self.rnn_init for _ in range(e.shape[0])], dim=1)
+        # rnn_init: [n_layers * 2, B, rnn_hidden]
+        assert len(rnn_init.shape) == 3
+        y, _ = self.yRNN.forward(y, rnn_init)
+        if self.use_x:
+            ycat = torch.cat([e, y], dim=2)
+        else:
+            ycat = y
+        pred_z = self.xydecoding(ycat)
+        return pred_z
+
+
 class MapperModel(torch.nn.Module):
-    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int):
+    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int, soft_label_value: float, decoder_use_x=True):
         super().__init__()
         self.base_transformer_name = base_transformer_name
         self.n_y_labels = n_y_labels
         self.n_z_labels = n_z_labels
-        self.model = AutoModel.from_pretrained(
-           base_transformer_name
-        )
-        # TODO: How to get this automatically?
-        embedding_dim_size = 1024
-        if base_transformer_name == 'vinai/bertweet-large':
+        self.model = AutoModel.from_pretrained(base_transformer_name)
+        embedding_dim_size = 1024  # model dependant
+        if base_transformer_name == "vinai/bertweet-large":
             embedding_dim_size = 1024
-        self.decoderDropout = .5
-        decoder_hidden_dim = 512
-        decoder_hidden_2_dim = 512
-        # Conversion from hard label to soft label
-        self.soft_label_value = torch.nn.Parameter(torch.tensor(4.5, dtype=torch.float32))
-        self.register_parameter(name='soft_label', param=self.soft_label_value)
-        self.yzdecoding_1 = nn.Sequential(
-            nn.Linear(n_y_labels, decoder_hidden_dim),
-            nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout),
-            )
-        self.yzdecoding_2 = nn.Sequential(
-            nn.Linear(decoder_hidden_dim + embedding_dim_size, decoder_hidden_2_dim),
-            nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_2_dim, n_z_labels),
-        )
-        self.zydecoding_1 = nn.Sequential(
-            nn.Linear(n_z_labels, decoder_hidden_dim),
-            nn.LayerNorm(decoder_hidden_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout)
-            )
-        self.zydecoding_2 = nn.Sequential(
-            nn.Linear(decoder_hidden_dim + embedding_dim_size,decoder_hidden_2_dim),
-            nn.LayerNorm(decoder_hidden_2_dim), nn.GELU(),
-            nn.Dropout(self.decoderDropout),
-            nn.Linear(decoder_hidden_2_dim,n_y_labels),
-            )
+        self.yzdecoding = Label2LabelDecoder(
+            embedding_dim_size, n_y_labels, n_z_labels, soft_label_value, decoder_use_x)
+        self.zydecoding = Label2LabelDecoder(
+            embedding_dim_size, n_z_labels, n_y_labels, soft_label_value, decoder_use_x)
         self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
         self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
 
-        # Make the soft labels look similar to the hard labels so the model
-        # is tricked into thinking they are the same or something
-        self.harden_label = True
         self.to(device)
-
 
     def encode(self, batch: dict) -> torch.Tensor:
         """
@@ -77,11 +107,11 @@ class MapperModel(torch.nn.Module):
         Embeddings of shape
         [batch_size, sentence_length, embedding_dim_size]
         """
-        batch['input_ids'] = batch['input_ids'].to(device)
-        batch['attention_mask'] = batch['attention_mask'].to(device)
-        if 'labels' in batch:
+        batch["input_ids"] = batch["input_ids"].to(device)
+        batch["attention_mask"] = batch["attention_mask"].to(device)
+        if "labels" in batch:
             # Hide the truth!
-            labels= batch["labels"]
+            labels = batch["labels"]
             del batch["labels"]
             result = self.model(**batch)
             batch["labels"] = labels
@@ -89,19 +119,7 @@ class MapperModel(torch.nn.Module):
             result = self.model(**batch)
         # Transformer library returns a tuple, in this case
         # it has only 1 element
-        return result[0] 
-
-    def preprocess_label(self, label, n_labels):
-        if len(label.shape) == 2:
-            # label is of shape [batch, L]
-            label_soft = hardToSoftLabel(label, n_labels, self.soft_label_value)
-        elif len(label.shape) == 3 and self.harden_label:
-            # label is of shape [batch, L, n_labels]
-            ind = torch.argmax(label, dim=2)
-            label_soft = hardToSoftLabel(ind, n_labels, self.soft_label_value)
-        else:
-            label_soft = label
-        return label_soft.to(device)
+        return result[0]
 
     def decode_y(self, e: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
@@ -109,11 +127,7 @@ class MapperModel(torch.nn.Module):
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         y: batch of integer label or estimated vector softmax estimate of Y of size n_y_labels.
         """
-        y = self.preprocess_label(y, self.n_y_labels).clone()
-        y_embed = self.yzdecoding_1(y)
-        ycat = torch.cat([e, y_embed], dim=2)
-        pred_z = self.yzdecoding_2(ycat)
-        return pred_z
+        return self.yzdecoding(e, y)
 
     def decode_z(self, e: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
         """
@@ -121,8 +135,4 @@ class MapperModel(torch.nn.Module):
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
-        z = self.preprocess_label(z, self.n_z_labels).clone()
-        z_embed = self.zydecoding_1(z)
-        zcat = torch.cat([e, z_embed], dim=2)
-        pred_y = self.zydecoding_2(zcat)
-        return pred_y
+        return self.zydecoding(e, z)

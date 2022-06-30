@@ -79,6 +79,7 @@ class TransformerCompatDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.orig_dataset)
 
+
 class MergedDataset(torch.utils.data.Dataset):
     def __init__(self, dataset1, dataset2, dataset3=None):
         self.dataset1 = dataset1

@@ -46,7 +46,6 @@ class PseudoDataset(torch.utils.data.Dataset):
         return X, Y
 
 
-
 def train_teacher(model_name, dataset_name, save_path):
     hparams = {
         "n_epochs": 4,
