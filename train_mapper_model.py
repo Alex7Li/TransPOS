@@ -176,6 +176,9 @@ def get_validation_predictions(
         elif inference_type == "no_label_input":
             z_pred = torch.argmax(model.decode_y(e, model.ydecoding(e)), dim=2)
             y_pred = torch.argmax(model.decode_z(e, model.zdecoding(e)), dim=2)
+        elif inference_type == "independent":
+            z_pred = torch.argmax(model.ydecoding(e) + model.decode_y(e, labels_y[-1]), dim=2)
+            y_pred = torch.argmax(model.zdecoding(e) + model.decode_z(e, labels_z[-1]), dim=2)
         else:
             raise NotImplementedError()
         predicted_z.append(z_pred)
@@ -192,7 +195,7 @@ def model_validation_acc(
     parameters: MapperTrainingParameters,
 ) -> Tuple[float, float]:
     if cur_epoch % 3 == 0:  # do all losses
-        for val_type in ["normal", "no_label_input", "ours"]:
+        for val_type in ["normal", "no_label_input", "ours", "independent"]:
             (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
                 model, shared_val_dataset, val_type, parameters
             )
