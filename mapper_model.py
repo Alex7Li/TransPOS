@@ -1,7 +1,9 @@
+from dataclasses import replace
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import torch.nn.init
+from torch.distributions import Categorical
 from transformers import AutoModel
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -15,8 +17,6 @@ def hardToSoftLabel(
     hard_label = torch.clone(hard_label)
     hard_label[hard_label == -100] += 100
     one_hot = F.one_hot(hard_label, n_classes)
-    # Add 5 to the parameter because weight decay will make
-    # it want to be zero but really we want it to be positive
     one_hot = one_hot.float().to(device)
     soft_label = one_hot * soft_label_value
     soft_label -= torch.unsqueeze(torch.mean(soft_label, dim=2), 2)
@@ -56,11 +56,12 @@ class Label2LabelDecoder(torch.nn.Module):
             self.xydecoding = nn.Linear(2 * rnn_hidden, n_z_labels)
 
     def preprocess_label(self, label):
-        if len(label.shape) == 2:
-            # label is of shape [batch, L]
-            label_soft = hardToSoftLabel(label, self.n_y_labels, self.soft_label_value)
-        else:
-            label_soft = label
+        if len(label.shape) == 3:
+            # label is of shape [batch, L, self.n_y_labels]
+            label = Categorical(logits=label).sample()
+        # label is of shape [batch, L]
+        label_soft = hardToSoftLabel(label, self.n_y_labels, self.soft_label_value)
+        # label_soft shape is [batch, L, self.n_y_labels]
         return label_soft.to(device)
 
     def forward(self, e: torch.Tensor, y: torch.Tensor):
