@@ -43,6 +43,7 @@ class MapperTrainingParameters:
         self.tqdm=tqdm
         self.soft_label_value=soft_label_value
         self.decoder_use_x=decoder_use_x
+        self.lr=lr
 
 
 def compose_loss(
