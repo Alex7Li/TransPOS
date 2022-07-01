@@ -268,7 +268,7 @@ def train_model(
         else:
             lr_factor = 1.0 - (epoch - phase_1_epochs) / phase_2_epochs
             if parameters.freeze_encoder:
-                lr_factor *= 5 # way less weights to train in phase 2
+                lr_factor *= 3 # way less weights to train in phase 2
             return lr_factor
 
     scheduler = LambdaLR(
