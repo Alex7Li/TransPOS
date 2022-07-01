@@ -130,10 +130,10 @@ def train_epoch(
         total_y += ty
         correct_z += cz
         total_z += tz
-
-    print(
-        f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
-    )
+    if cur_epoch >= parameters.only_supervised_epochs:
+        print(
+            f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
+        )
 
 
 def get_validation_predictions(
@@ -170,7 +170,7 @@ def get_validation_predictions(
         if inference_type == "ours":
             z_pred = torch.argmax(model.decode_y(e, y_true), dim=2)
             y_pred = torch.argmax(model.decode_z(e, z_true), dim=2)
-        elif inference_type == "normal":
+        elif inference_type == "x baseline":
             y_pred = torch.argmax(model.ydecoding(e), dim=2)
             z_pred = torch.argmax(model.zdecoding(e), dim=2)
         elif inference_type == "no_label_input":
@@ -197,7 +197,7 @@ def model_validation_acc(
     parameters: MapperTrainingParameters,
 ) -> Tuple[float, float]:
     if cur_epoch % 3 == 0:  # do all losses
-        val_types = ["normal", "no_label_input", "ours"]
+        val_types = ["x baseline", "no_label_input", "ours"]
         if not parameters.decoder_use_x:
             val_types += ["independent"]
         for val_type in val_types:
@@ -209,7 +209,7 @@ def model_validation_acc(
             print(f"Val Type {val_type} y_acc: {y_acc} z_acc: {z_acc}")
     else:
         if cur_epoch < parameters.only_supervised_epochs:
-            val_type = "normal"
+            val_type = "x baseline"
         else:
             val_type = "ours"
         (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
@@ -246,7 +246,7 @@ def train_model(
                     model.ydecoding.parameters(),
                     model.zdecoding.parameters(),
                 ),
-                "lr":3e-5,
+                "lr": 3e-4 if parameters.freeze_encoder else 3e-5,
                 "weight_decay": 1e-4,
             },
             {
@@ -254,7 +254,7 @@ def train_model(
                     model.yzdecoding.parameters(),
                     model.zydecoding.parameters(),
                 ),
-                "lr": 3e-5,
+                "lr": 6e-5,
                 "weight_decay": 1e-4,
             },
         ]
@@ -266,7 +266,10 @@ def train_model(
         if epoch < phase_1_epochs:
             return 1.0 - epoch / phase_1_epochs
         else:
-            return 1.0 - (epoch - phase_1_epochs) / phase_2_epochs
+            lr_factor = 1.0 - (epoch - phase_1_epochs) / phase_2_epochs
+            if parameters.freeze_encoder:
+                lr_factor /= 5
+            return lr_factor
 
     scheduler = LambdaLR(
         optimizer,
