@@ -30,7 +30,8 @@ class MapperTrainingParameters:
         batch_size=16,
         tqdm=False,
         soft_label_value=4.5,
-        decoder_use_x=True
+        decoder_use_x=True,
+        lr=1e-4
     ) -> None:
         super()
         self.alpha = alpha
@@ -242,7 +243,7 @@ def train_model(
                 "params": itertools.chain(
                     model.model.parameters(),
                 ),
-                "lr": 3e-5,
+                "lr": parameters.lr,
                 "weight_decay": 1e-4,
             },
             {
@@ -252,7 +253,7 @@ def train_model(
                     model.yzdecoding.parameters(),
                     model.zydecoding.parameters(),
                 ),
-                "lr": 3e-5,
+                "lr": parameters.lr,
                 "weight_decay": 1e-4,
             },
         ]
@@ -313,8 +314,8 @@ def main(
 ):
     if parameters == None:
         parameters = MapperTrainingParameters(
-            alpha=1.0, freeze_encoder=False, total_epochs=30,
-            only_supervised_epochs=10, decoder_use_x=False
+            alpha=1.0, freeze_encoder=False, total_epochs=24,
+            only_supervised_epochs=8, decoder_use_x=False
         )
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
@@ -328,7 +329,7 @@ def main(
         model_name, z_dataset, parameters.batch_size, shuffle=True
     )
     model = MapperModel(
-        "vinai/bertweet-large", y_dataset.num_labels, z_dataset.num_labels,
+        model_name, y_dataset.num_labels, z_dataset.num_labels,
         parameters.soft_label_value, parameters.decoder_use_x
     )
     model.to(parameters.device)

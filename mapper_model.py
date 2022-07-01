@@ -91,9 +91,11 @@ class MapperModel(torch.nn.Module):
         self.n_y_labels = n_y_labels
         self.n_z_labels = n_z_labels
         self.model = AutoModel.from_pretrained(base_transformer_name)
-        embedding_dim_size = 1024  # model dependant
+        embedding_dim_size = 1024
         if base_transformer_name == "vinai/bertweet-large":
             embedding_dim_size = 1024
+        elif base_transformer_name == "gpt2":
+            embedding_dim_size = 768
         self.yzdecoding = Label2LabelDecoder(
             embedding_dim_size, n_y_labels, n_z_labels, soft_label_value, decoder_use_x)
         self.zydecoding = Label2LabelDecoder(
