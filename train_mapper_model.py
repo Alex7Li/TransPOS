@@ -208,7 +208,7 @@ def model_validation_acc(
             )
             y_acc = dataloading_utils.get_acc(y_preds, y_labels)
             z_acc = dataloading_utils.get_acc(z_preds, z_labels)
-            print(f"Val Type {val_type} y_acc: {y_acc:.2f} z_acc: {z_acc:.2f}")
+            print(f"Val Type {val_type} y_acc: {100*y_acc:.2f}% z_acc: {100*z_acc:.2f}%")
     else:
         if cur_epoch < parameters.only_supervised_epochs:
             val_type = "x baseline"
@@ -219,7 +219,7 @@ def model_validation_acc(
         )
         y_acc = dataloading_utils.get_acc(y_preds, y_labels)
         z_acc = dataloading_utils.get_acc(z_preds, z_labels)
-        print(f"Val Type {val_type} y_acc: {y_acc:.2f} z_acc: {z_acc:.2f}")
+        print(f"Val Type {val_type} y_acc: {100*y_acc:.2f}% z_acc: {100*z_acc:.2f}%")
     return y_acc, z_acc
 
 
@@ -299,7 +299,7 @@ def train_model(
             print("Saving this model")
             torch.save(model.state_dict(), save_path)
         if epoch_index == parameters.only_supervised_epochs - 1 and parameters.freeze_encoder:
-            print("Freezing encoder weights")
+            print("Freezing encoder weights and switching to training the label encoder")
             for param in model.model.parameters():
                 param.requires_grad = not parameters.freeze_encoder
         scheduler.step()
