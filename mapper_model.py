@@ -46,8 +46,8 @@ class Label2LabelDecoder(torch.nn.Module):
         xy_hidden = 512
         self.use_x = use_x
         if use_x:
-            # Huge so that the second layer can't rely on x!
-            self.x_dropout = nn.Dropout(p=.85, inplace=True)
+            # Huge so that the second layer can't just rely on x!
+            self.x_dropout = nn.Dropout(p=.88, inplace=True)
             self.xydecoding = nn.Sequential(
                 nn.Linear(2 * rnn_hidden + embedding_dim, xy_hidden),
                 nn.LayerNorm(xy_hidden),

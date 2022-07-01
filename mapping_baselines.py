@@ -14,7 +14,7 @@ def normal_model_baseline(train_dataset_name, model_name):
     else:
         raise NotImplementedError
     hparams = {
-        "n_epochs": 10,
+        "n_epochs": 8,
         "batch_size": 32,
         "dataset": train_dataset_name,
         "model_name": model_name,
