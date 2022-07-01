@@ -46,6 +46,8 @@ class Label2LabelDecoder(torch.nn.Module):
         xy_hidden = 512
         self.use_x = use_x
         if use_x:
+            # Huge so that the second layer can't rely on x!
+            self.x_dropout = nn.Dropout(p=.9, inplace=True)
             self.xydecoding = nn.Sequential(
                 nn.Linear(2 * rnn_hidden + embedding_dim, xy_hidden),
                 nn.LayerNorm(xy_hidden),
@@ -74,6 +76,7 @@ class Label2LabelDecoder(torch.nn.Module):
         assert len(rnn_init.shape) == 3
         y, _ = self.yRNN.forward(y, rnn_init)
         if self.use_x:
+            e = self.x_dropout(e)
             ycat = torch.cat([e, y], dim=2)
         else:
             ycat = y

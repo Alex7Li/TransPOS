@@ -347,4 +347,5 @@ def main(
 
 
 if __name__ == "__main__":
-    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)
+    # main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)
+    main("tweebank", "ark", "gpt2", load_cached_weights=False)
