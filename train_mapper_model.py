@@ -236,25 +236,23 @@ def train_model(
         print(
             f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs"
         )
-    for param in model.model.parameters():
-        param.requires_grad = not parameters.freeze_encoder
     optimizer = torch.optim.NAdam(
         [
             {
                 "params": itertools.chain(
                     model.model.parameters(),
-                    model.ydecoding.parameters(),
-                    model.zdecoding.parameters(),
                 ),
-                "lr": 3e-4 if parameters.freeze_encoder else 3e-5,
+                "lr": 3e-5,
                 "weight_decay": 1e-4,
             },
             {
                 "params": itertools.chain(
+                    model.ydecoding.parameters(),
+                    model.zdecoding.parameters(),
                     model.yzdecoding.parameters(),
                     model.zydecoding.parameters(),
                 ),
-                "lr": 6e-5,
+                "lr": 3e-4,
                 "weight_decay": 1e-4,
             },
         ]
@@ -267,8 +265,6 @@ def train_model(
             return 1.0 - epoch / phase_1_epochs
         else:
             lr_factor = 1.0 - (epoch - phase_1_epochs) / phase_2_epochs
-            if parameters.freeze_encoder:
-                lr_factor /= 5
             return lr_factor
 
     scheduler = LambdaLR(
@@ -300,6 +296,10 @@ def train_model(
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)
             print("Saving this model")
             torch.save(model.state_dict(), save_path)
+        if epoch_index >= parameters.only_supervised_epochs - 1:
+            print("Freezing encoder weights")
+            for param in model.model.parameters():
+                param.requires_grad = not parameters.freeze_encoder
         scheduler.step()
     return model
 
