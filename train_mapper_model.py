@@ -1,10 +1,9 @@
-from pytest import param
 from mapper_model import MapperModel
 import dataloading_utils
 from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
 import torch
 from collections import defaultdict
-from functools import partial, total_ordering
+from functools import partial
 from tqdm import tqdm as std_tqdm
 import numpy as np
 tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
@@ -30,7 +29,8 @@ class MapperTrainingParameters:
         tqdm=False,
         decoder_use_x=True,
         lr=2e-3,
-        lr_fine_tune=2e-5
+        lr_fine_tune=2e-5,
+        use_shared_encoder=False
     ) -> None:
         super()
         self.alpha = alpha
@@ -43,6 +43,7 @@ class MapperTrainingParameters:
         self.decoder_use_x=decoder_use_x
         self.lr=lr
         self.lr_fine_tune=lr_fine_tune
+        self.use_shared_encoder=use_shared_encoder
 
 
 def compose_loss(
@@ -60,15 +61,15 @@ def compose_loss(
     variable names will assume the first term)
     """
     # decode_y = model.decode_y if input_label == "y" else model.decode_z
-    decode_z = model.decode_z if input_label == "y" else model.decode_y
+    decode_z = model.decode_y if input_label == "y" else model.decode_z
+    encode_y = model.encode_y  if input_label == "y" else model.encode_z
     supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
     supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
 
     batch = {k: v.to(parameters.device) for k, v in batch.items()}
     labels = batch["labels"]
     del batch["labels"]
-    e_y = model.encode(batch)
-    # z_tilde = decode_y(e_y, labels)
+    e_y = encode_y(batch)
     z_tilde = supervisor_z(e_y)
     y_tilde = decode_z(e_y, z_tilde)
     y_pred_probs = F.softmax(y_tilde, dim=2)
@@ -167,19 +168,23 @@ def get_validation_predictions(
     for y_batch, z_batch in pbar:
         y_true =  y_batch['labels']
         z_true =  z_batch['labels']
-        e = model.encode(y_batch)
+        e_y = model.encode_y(y_batch)
+        if parameters.use_shared_encoder:
+            e_z = e_y
+        else:
+            e_z = model.encode_z(z_batch)
         if inference_type == "ours":
-            z_pred = torch.argmax(model.decode_y(e, y_true), dim=2)
-            y_pred = torch.argmax(model.decode_z(e, z_true), dim=2)
+            z_pred = torch.argmax(model.decode_z(e_z, y_true), dim=2)
+            y_pred = torch.argmax(model.decode_y(e_y, z_true), dim=2)
         elif inference_type == "x baseline":
-            y_pred = torch.argmax(model.ydecoding(e), dim=2)
-            z_pred = torch.argmax(model.zdecoding(e), dim=2)
+            y_pred = torch.argmax(model.ydecoding(e_y), dim=2)
+            z_pred = torch.argmax(model.zdecoding(e_z), dim=2)
         elif inference_type == "no_label_input":
-            y_pred = torch.argmax(model.decode_z(e, model.zdecoding(e)), dim=2)
-            z_pred = torch.argmax(model.decode_y(e, model.ydecoding(e)), dim=2)
+            y_pred = torch.argmax(model.decode_y(e_y, model.zdecoding(e_z)), dim=2)
+            z_pred = torch.argmax(model.decode_z(e_z, model.ydecoding(e_y)), dim=2)
         elif inference_type == "independent":
-            y_pred = torch.argmax(model.ydecoding(e) + model.decode_z(e, z_true), dim=2)
-            z_pred = torch.argmax(model.zdecoding(e) + model.decode_y(e, y_true), dim=2)
+            y_pred = torch.argmax(model.ydecoding(e_y) + model.decode_y(e_y, z_true), dim=2)
+            z_pred = torch.argmax(model.zdecoding(e_z) + model.decode_z(e_z, y_true), dim=2)
         else:
             raise NotImplementedError()
         labels_y.append(y_true)
@@ -241,7 +246,7 @@ def train_model(
         [
             {
                 "params": itertools.chain(
-                    model.model.parameters()
+                    model.pretrained_params
                 ),
                 "lr": parameters.lr_fine_tune,
                 "weight_decay": 1e-4,
@@ -334,7 +339,7 @@ def main(
         model_name, z_dataset, parameters.batch_size, shuffle=True
     )
     model = MapperModel(
-        model_name, y_dataset.num_labels, z_dataset.num_labels, parameters.decoder_use_x
+        model_name, y_dataset.num_labels, z_dataset.num_labels, parameters
     )
     model.to(parameters.device)
     shared_val_dataset = None
@@ -349,8 +354,6 @@ def main(
         load_cached_weights,
         parameters,
     )
-    # After 10 epochs:
-    # Val Acc Y: 92.12633451957295% Val Acc Z 92.48220640569394%
     return mapped_model
 
 

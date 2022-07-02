@@ -84,27 +84,40 @@ class Label2LabelDecoder(torch.nn.Module):
 
 
 class MapperModel(torch.nn.Module):
-    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int, decoder_use_x=True):
+    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int, parameters):
         super().__init__()
         self.base_transformer_name = base_transformer_name
         self.n_y_labels = n_y_labels
         self.n_z_labels = n_z_labels
-        self.model = AutoModel.from_pretrained(base_transformer_name)
+        self.model_y = AutoModel.from_pretrained(base_transformer_name)
+        if parameters.use_shared_encoder:
+            self.model_z = self.model_y
+        else:
+            self.model_z = AutoModel.from_pretrained(base_transformer_name)
         embedding_dim_size = 1024
         if base_transformer_name == "vinai/bertweet-large":
             embedding_dim_size = 1024
         elif base_transformer_name == "gpt2":
             embedding_dim_size = 768
         self.yzdecoding = Label2LabelDecoder(
-            embedding_dim_size, n_y_labels, n_z_labels, decoder_use_x)
+            embedding_dim_size, n_y_labels, n_z_labels, parameters.decoder_use_x)
         self.zydecoding = Label2LabelDecoder(
-            embedding_dim_size, n_z_labels, n_y_labels, decoder_use_x)
+            embedding_dim_size, n_z_labels, n_y_labels, parameters.decoder_use_x)
         self.ydecoding = nn.Sequential(
             nn.Linear(embedding_dim_size, n_y_labels),
         )
         self.zdecoding = nn.Sequential(
             nn.Linear(embedding_dim_size, n_z_labels),
         )
+        if parameters.use_shared_encoder:
+            self.pretrained_params = itertools.chain(
+                self.model_y.parameters(),
+            )
+        else:
+            self.pretrained_params = itertools.chain(
+                self.model_y.parameters(),
+                self.model_z.parameters(),
+            )
         self.auxilary_params = itertools.chain(
             self.yzdecoding.parameters(),
             self.zydecoding.parameters(),
@@ -113,7 +126,7 @@ class MapperModel(torch.nn.Module):
         )
         self.to(device)
 
-    def encode(self, batch: dict) -> torch.Tensor:
+    def encode(self, batch: dict, output_label='y') -> torch.Tensor:
         """
         Use a transformer to encode x into an embedding dimension E.
 
@@ -121,32 +134,39 @@ class MapperModel(torch.nn.Module):
         Embeddings of shape
         [batch_size, sentence_length, embedding_dim_size]
         """
+        model = self.model_y if output_label == 'y' else self.model_z
         batch["input_ids"] = batch["input_ids"].to(device)
         batch["attention_mask"] = batch["attention_mask"].to(device)
         if "labels" in batch:
             # Hide the truth!
             labels = batch["labels"]
             del batch["labels"]
-            result = self.model(**batch)
+            result = model(**batch)
             batch["labels"] = labels
         else:
-            result = self.model(**batch)
+            result = model(**batch)
         # Transformer library returns a tuple, in this case
         # it has only 1 element
         return result[0]
 
-    def decode_y(self, e: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def encode_y(self, batch) -> torch.Tensor:
+        return self.encode(batch, 'y')
+
+    def encode_z(self, batch) -> torch.Tensor:
+        return self.encode(batch, 'z')
+
+    def decode_z(self, e_z: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
         Combine an embedding with a Y label to predict a Z label.
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         y: batch of integer label or estimated vector softmax estimate of Y of size n_y_labels.
         """
-        return self.yzdecoding(e, y)
+        return self.yzdecoding(e_z, y)
 
-    def decode_z(self, e: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+    def decode_y(self, e_y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
         """
         Combine an embedding with a Z label to predict a Y label.
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
-        return self.zydecoding(e, z)
+        return self.zydecoding(e_y, z)
