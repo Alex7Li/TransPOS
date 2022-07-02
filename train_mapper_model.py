@@ -276,9 +276,8 @@ def train_model(
         phase_3_st_ratio = parameters.lr_fine_tune / parameters.lr 
         if epoch < phase_1_epochs:
             return interpolate_geometric(1, phase_2_st_ratio, epoch / phase_1_epochs)
-        if epoch < phase_1_epochs + phase_2_epochs:
-            dist = (epoch - phase_1_epochs) / (phase_2_epochs)
-            return interpolate_geometric(phase_2_st_ratio, phase_3_st_ratio, epoch / dist)
+        elif epoch < phase_1_epochs + phase_2_epochs:
+            return interpolate_geometric(phase_2_st_ratio, phase_3_st_ratio, epoch / phase_2_epochs)
         else: # phase 3 fine tuning with all weight unfrozen, lr should be small
             return parameters.lr_fine_tune / parameters.lr 
 
