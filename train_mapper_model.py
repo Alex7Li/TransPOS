@@ -30,7 +30,7 @@ class MapperTrainingParameters:
         decoder_use_x=True,
         lr=2e-3,
         lr_fine_tune=2e-5,
-        use_shared_encoder=False
+        use_shared_encoder=True
     ) -> None:
         super()
         self.alpha = alpha
