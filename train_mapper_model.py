@@ -4,7 +4,7 @@ import dataloading_utils
 from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
 import torch
 from collections import defaultdict
-from functools import partial
+from functools import partial, total_ordering
 from tqdm import tqdm as std_tqdm
 import numpy as np
 tqdm = partial(std_tqdm, leave=True, position=0, dynamic_ncols=True)
@@ -25,25 +25,32 @@ class MapperTrainingParameters:
         self,
         freeze_encoder=False,
         total_epochs=20,
-        only_supervised_epochs=10,
+        only_supervised_epochs=0, # Can increase for a comparison
+        label_to_label_epochs=10,
         alpha: Optional[float] = 1.0,
         batch_size=16,
         tqdm=False,
         soft_label_value=4.5,
         decoder_use_x=True,
-        lr=1e-4
+        lr=2e-3,
+        lr_label_to_label=2e-3,
+        lr_fine_tune=2e-5
     ) -> None:
         super()
         self.alpha = alpha
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.freeze_encoder = freeze_encoder
-        self.total_epochs = total_epochs
+        assert label_to_label_epochs + only_supervised_epochs <= total_epochs
+        self.total_epochs =  total_epochs
+        self.label_to_label_epochs = label_to_label_epochs
         self.only_supervised_epochs = only_supervised_epochs
         self.batch_size = batch_size
         self.tqdm=tqdm
         self.soft_label_value=soft_label_value
         self.decoder_use_x=decoder_use_x
         self.lr=lr
+        self.lr_label_to_label=lr_label_to_label
+        self.lr_fine_tune=lr_fine_tune
 
 
 def compose_loss(
@@ -238,21 +245,14 @@ def train_model(
         print(
             f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs"
         )
+    # Don't touch model weights and start with a large lr
+    for param in model.model.parameters():
+        param.requires_grad = False
     optimizer = torch.optim.NAdam(
         [
             {
                 "params": itertools.chain(
-                    model.model.parameters(),
-                ),
-                "lr": parameters.lr,
-                "weight_decay": 1e-4,
-            },
-            {
-                "params": itertools.chain(
-                    model.ydecoding.parameters(),
-                    model.zdecoding.parameters(),
-                    model.yzdecoding.parameters(),
-                    model.zydecoding.parameters(),
+                    model.parameters(),
                 ),
                 "lr": parameters.lr,
                 "weight_decay": 1e-4,
@@ -262,14 +262,13 @@ def train_model(
 
     def linear_2_phase(epoch):
         phase_1_epochs = parameters.only_supervised_epochs
-        phase_2_epochs = n_epochs - phase_1_epochs
+        phase_2_epochs = parameters.label_to_label_epochs
         if epoch < phase_1_epochs:
-            return 1.0 - epoch / phase_1_epochs
-        else:
-            lr_factor = 1.0 - (epoch - phase_1_epochs) / phase_2_epochs
-            if parameters.freeze_encoder:
-                lr_factor *= 3 # way less weights to train in phase 2
-            return lr_factor
+            return 1.0
+        if epoch < phase_1_epochs + phase_2_epochs:
+            return parameters.lr_label_to_label / parameters.lr 
+        else: # phase 3 fine tuning with all weight unfrozen, lr should be small
+            return parameters.lr_fine_tune / parameters.lr 
 
     scheduler = LambdaLR(
         optimizer,
@@ -287,6 +286,9 @@ def train_model(
         )
     for epoch_index in pbar:
         print(f"Epoch {epoch_index + 1}/{n_epochs}")
+        if epoch_index == parameters.only_supervised_epochs + parameters.label_to_label_epochs:
+            for param in model.model.parameters():  # Begin fine tuning
+                param.requires_grad = True
         train_epoch(
             y_dataloader, z_dataloader, model, optimizer, parameters, epoch_index
         )
@@ -300,10 +302,6 @@ def train_model(
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)
             print("Saving this model")
             torch.save(model.state_dict(), save_path)
-        if epoch_index == parameters.only_supervised_epochs - 1 and parameters.freeze_encoder:
-            print("Freezing encoder weights and switching to training the label encoder")
-            for param in model.model.parameters():
-                param.requires_grad = not parameters.freeze_encoder
         scheduler.step()
     return model
 
