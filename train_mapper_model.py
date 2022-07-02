@@ -256,13 +256,29 @@ def train_model(
         ]
     )
 
+    def interpolate_geometric(low:float, high:float, dist:float):
+        """
+        Find a the point dist/100 percent of the way from low to high
+        on a log scale.
+        
+        Dist is a parameter between
+        0 and 1 indicating how close to low/high it should be.
+        """
+        loghi = np.log(high)
+        loglow = np.log(low)
+        logmid = loglow * (1 - dist) + loghi * dist
+        return np.exp(logmid)
+
     def linear_2_phase(epoch):
         phase_1_epochs = parameters.only_supervised_epochs
         phase_2_epochs = parameters.label_to_label_epochs
+        phase_2_st_ratio = parameters.lr_label_to_label / parameters.lr 
+        phase_3_st_ratio = parameters.lr_fine_tune / parameters.lr 
         if epoch < phase_1_epochs:
-            return 1.0
+            return interpolate_geometric(1, phase_2_st_ratio, epoch / phase_1_epochs)
         if epoch < phase_1_epochs + phase_2_epochs:
-            return parameters.lr_label_to_label / parameters.lr 
+            dist = (epoch - phase_1_epochs) / (phase_2_epochs)
+            return interpolate_geometric(phase_2_st_ratio, phase_3_st_ratio, epoch / dist)
         else: # phase 3 fine tuning with all weight unfrozen, lr should be small
             return parameters.lr_fine_tune / parameters.lr 
 
