@@ -30,7 +30,6 @@ class MapperTrainingParameters:
         tqdm=False,
         decoder_use_x=True,
         lr=2e-3,
-        lr_label_to_label=2e-3,
         lr_fine_tune=2e-5
     ) -> None:
         super()
@@ -43,7 +42,6 @@ class MapperTrainingParameters:
         self.tqdm=tqdm
         self.decoder_use_x=decoder_use_x
         self.lr=lr
-        self.lr_label_to_label=lr_label_to_label
         self.lr_fine_tune=lr_fine_tune
 
 
@@ -286,7 +284,7 @@ def train_model(
         optimizer,
         lr_lambda=[
             lambda _:1,
-            partial(linear_2_phase, parameters.lr_label_to_label / parameters.lr)
+            partial(linear_2_phase, parameters.lr_fine_tune / parameters.lr)
         ]
     )
     best_validation_acc = 0
