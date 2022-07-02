@@ -237,9 +237,6 @@ def train_model(
         print(
             f"Loaded weights from {save_path}. Will continue for {n_epochs} more epochs"
         )
-    # Don't touch model weights and start with a large lr
-    for param in model.model.parameters():
-        param.requires_grad = False
     optimizer = torch.optim.NAdam(
         [
             {
@@ -296,9 +293,6 @@ def train_model(
         )
     for epoch_index in pbar:
         print(f"Epoch {epoch_index + 1}/{n_epochs}")
-        if epoch_index == parameters.only_supervised_epochs:
-            for param in model.model.parameters():  # Begin fine tuning
-                param.requires_grad = True
         train_epoch(
             y_dataloader, z_dataloader, model, optimizer, parameters, epoch_index
         )
