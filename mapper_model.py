@@ -98,9 +98,19 @@ class MapperModel(torch.nn.Module):
             embedding_dim_size, n_y_labels, n_z_labels, decoder_use_x)
         self.zydecoding = Label2LabelDecoder(
             embedding_dim_size, n_z_labels, n_y_labels, decoder_use_x)
-        self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
-        self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
-
+        middle_embedding_size = 1024
+        self.ydecoding = nn.Sequential(
+            nn.Linear(embedding_dim_size, middle_embedding_size),
+            nn.LayerNorm(middle_embedding_size),
+            nn.GELU(),
+            nn.Linear(middle_embedding_size, n_y_labels)
+        )
+        self.zdecoding = nn.Sequential(
+            nn.Linear(embedding_dim_size, middle_embedding_size),
+            nn.LayerNorm(middle_embedding_size),
+            nn.GELU(),
+            nn.Linear(middle_embedding_size, n_z_labels)
+        )
         self.to(device)
 
     def encode(self, batch: dict) -> torch.Tensor:
