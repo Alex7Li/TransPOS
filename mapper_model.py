@@ -10,7 +10,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def hardToSoftLabel(
-    hard_label: torch.Tensor, n_classes: int, soft_label_value: torch.Tensor
+    hard_label: torch.Tensor, n_classes: int
 ):
     BS, SEQ_LEN = hard_label.shape
     # Ensure the ignored indicies don't crash the code.
@@ -18,19 +18,17 @@ def hardToSoftLabel(
     hard_label[hard_label == -100] += 100
     one_hot = F.one_hot(hard_label, n_classes)
     one_hot = one_hot.float().to(device)
-    soft_label = one_hot * soft_label_value
-    soft_label -= torch.unsqueeze(torch.mean(soft_label, dim=2), 2)
-    return soft_label
+    one_hot -= torch.unsqueeze(torch.mean(one_hot, dim=2), 2)
+    return one_hot
 
 
 class Label2LabelDecoder(torch.nn.Module):
     def __init__(
-        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, soft_label_value: float, use_x=True
+        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, use_x=True
     ):
         super().__init__()
         self.n_y_labels = n_y_labels
         y_embed_dim = 512
-        self.soft_label_value = torch.tensor(soft_label_value).to(device)
         self.ydecoding = nn.Sequential(
             nn.Linear(n_y_labels, y_embed_dim), nn.LayerNorm(y_embed_dim)
         )
@@ -62,7 +60,7 @@ class Label2LabelDecoder(torch.nn.Module):
             # label is of shape [batch, L, self.n_y_labels]
             label = Categorical(logits=label).sample()
         # label is of shape [batch, L]
-        label_soft = hardToSoftLabel(label, self.n_y_labels, self.soft_label_value)
+        label_soft = hardToSoftLabel(label, self.n_y_labels)
         # label_soft shape is [batch, L, self.n_y_labels]
         return label_soft.to(device)
 
@@ -85,7 +83,7 @@ class Label2LabelDecoder(torch.nn.Module):
 
 
 class MapperModel(torch.nn.Module):
-    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int, soft_label_value: float, decoder_use_x=True):
+    def __init__(self, base_transformer_name: str, n_y_labels: int, n_z_labels: int, decoder_use_x=True):
         super().__init__()
         self.base_transformer_name = base_transformer_name
         self.n_y_labels = n_y_labels
@@ -97,9 +95,9 @@ class MapperModel(torch.nn.Module):
         elif base_transformer_name == "gpt2":
             embedding_dim_size = 768
         self.yzdecoding = Label2LabelDecoder(
-            embedding_dim_size, n_y_labels, n_z_labels, soft_label_value, decoder_use_x)
+            embedding_dim_size, n_y_labels, n_z_labels, decoder_use_x)
         self.zydecoding = Label2LabelDecoder(
-            embedding_dim_size, n_z_labels, n_y_labels, soft_label_value, decoder_use_x)
+            embedding_dim_size, n_z_labels, n_y_labels, decoder_use_x)
         self.ydecoding = nn.Linear(embedding_dim_size, n_y_labels)
         self.zdecoding = nn.Linear(embedding_dim_size, n_z_labels)
 

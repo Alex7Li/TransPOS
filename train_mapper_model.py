@@ -23,14 +23,12 @@ import torch.optim.lr_scheduler
 class MapperTrainingParameters:
     def __init__(
         self,
-        freeze_encoder=False,
         total_epochs=20,
         only_supervised_epochs=0, # Can increase for a comparison
         label_to_label_epochs=10,
         alpha: Optional[float] = 1.0,
         batch_size=16,
         tqdm=False,
-        soft_label_value=4.5,
         decoder_use_x=True,
         lr=2e-3,
         lr_label_to_label=2e-3,
@@ -39,14 +37,12 @@ class MapperTrainingParameters:
         super()
         self.alpha = alpha
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.freeze_encoder = freeze_encoder
-        assert label_to_label_epochs + only_supervised_epochs <= total_epochs
+        assert 0 <= label_to_label_epochs + only_supervised_epochs <= total_epochs
         self.total_epochs =  total_epochs
         self.label_to_label_epochs = label_to_label_epochs
         self.only_supervised_epochs = only_supervised_epochs
         self.batch_size = batch_size
         self.tqdm=tqdm
-        self.soft_label_value=soft_label_value
         self.decoder_use_x=decoder_use_x
         self.lr=lr
         self.lr_label_to_label=lr_label_to_label
@@ -314,7 +310,7 @@ def main(
 ):
     if parameters == None:
         parameters = MapperTrainingParameters(
-            alpha=1.0, freeze_encoder=False, total_epochs=24,
+            alpha=1.0, total_epochs=24,
             only_supervised_epochs=8, decoder_use_x=False
         )
     save_path = Path("models") / (
@@ -329,8 +325,7 @@ def main(
         model_name, z_dataset, parameters.batch_size, shuffle=True
     )
     model = MapperModel(
-        model_name, y_dataset.num_labels, z_dataset.num_labels,
-        parameters.soft_label_value, parameters.decoder_use_x
+        model_name, y_dataset.num_labels, z_dataset.num_labels, parameters.decoder_use_x
     )
     model.to(parameters.device)
     shared_val_dataset = None
