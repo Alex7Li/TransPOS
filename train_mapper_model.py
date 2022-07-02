@@ -274,8 +274,7 @@ def train_model(
         optimizer,
         lr_lambda=[
             linear_2_phase,
-            linear_2_phase,
-        ],
+        ]
     )
     best_validation_acc = 0
     valid_acc = 0
