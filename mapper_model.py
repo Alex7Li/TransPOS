@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import torch.nn.init
+import itertools
 from torch.distributions import Categorical
 from transformers import AutoModel
 
@@ -103,6 +104,12 @@ class MapperModel(torch.nn.Module):
         )
         self.zdecoding = nn.Sequential(
             nn.Linear(embedding_dim_size, n_z_labels),
+        )
+        self.auxilary_params = itertools.chain(
+            self.yzdecoding.parameters(),
+            self.zydecoding.parameters(),
+            self.ydecoding.parameters(),
+            self.zdecoding.parameters(),
         )
         self.to(device)
 

@@ -25,7 +25,6 @@ class MapperTrainingParameters:
         self,
         total_epochs=20,
         only_supervised_epochs=0, # Can increase for a comparison
-        label_to_label_epochs=10,
         alpha: Optional[float] = 1.0,
         batch_size=16,
         tqdm=False,
@@ -37,9 +36,8 @@ class MapperTrainingParameters:
         super()
         self.alpha = alpha
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        assert 0 <= label_to_label_epochs + only_supervised_epochs <= total_epochs
+        assert 0 <= only_supervised_epochs <= total_epochs
         self.total_epochs =  total_epochs
-        self.label_to_label_epochs = label_to_label_epochs
         self.only_supervised_epochs = only_supervised_epochs
         self.batch_size = batch_size
         self.tqdm=tqdm
@@ -248,7 +246,14 @@ def train_model(
         [
             {
                 "params": itertools.chain(
-                    model.parameters(),
+                    model.model.parameters()
+                ),
+                "lr": parameters.lr_fine_tune,
+                "weight_decay": 1e-4,
+            },
+            {
+                "params": itertools.chain(
+                    model.auxilary_params
                 ),
                 "lr": parameters.lr,
                 "weight_decay": 1e-4,
@@ -269,22 +274,19 @@ def train_model(
         logmid = loglow * (1 - dist) + loghi * dist
         return np.exp(logmid)
 
-    def linear_2_phase(epoch):
+    def linear_2_phase(end_ratio, epoch):
         phase_1_epochs = parameters.only_supervised_epochs
-        phase_2_epochs = parameters.label_to_label_epochs
-        phase_2_st_ratio = parameters.lr_label_to_label / parameters.lr 
-        phase_3_st_ratio = parameters.lr_fine_tune / parameters.lr 
+        phase_2_epochs = parameters.total_epochs - parameters.only_supervised_epochs
         if epoch < phase_1_epochs:
-            return interpolate_geometric(1, phase_2_st_ratio, epoch / phase_1_epochs)
-        elif epoch < phase_1_epochs + phase_2_epochs:
-            return interpolate_geometric(phase_2_st_ratio, phase_3_st_ratio, epoch / phase_2_epochs)
-        else: # phase 3 fine tuning with all weight unfrozen, lr should be small
-            return parameters.lr_fine_tune / parameters.lr 
+            return 1
+        else:
+            return interpolate_geometric(1, end_ratio, epoch - phase_1_epochs / phase_2_epochs)
 
     scheduler = LambdaLR(
         optimizer,
         lr_lambda=[
-            linear_2_phase,
+            lambda _:1,
+            partial(linear_2_phase, parameters.lr_label_to_label / parameters.lr)
         ]
     )
     best_validation_acc = 0
@@ -296,7 +298,7 @@ def train_model(
         )
     for epoch_index in pbar:
         print(f"Epoch {epoch_index + 1}/{n_epochs}")
-        if epoch_index == parameters.only_supervised_epochs + parameters.label_to_label_epochs:
+        if epoch_index == parameters.only_supervised_epochs:
             for param in model.model.parameters():  # Begin fine tuning
                 param.requires_grad = True
         train_epoch(
