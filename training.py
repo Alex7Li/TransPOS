@@ -589,7 +589,7 @@ def run_experiment(run_aug=False):
             }
             if not os.path.exists("models"):
                 os.mkdir("models")
-            hparams["save_path"] = %os.path.join(
+            hparams["save_path"] = os.path.join(
                 "models",
                 hparams["model_name"].split("/")[-1] + "_" + hparams["dataset"],
             )
