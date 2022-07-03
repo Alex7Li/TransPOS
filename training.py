@@ -472,6 +472,7 @@ def training_loop(
     n_epochs,
     save_path,
     aug=False,
+    val_callback=None
 ):
     optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
 
@@ -494,15 +495,17 @@ def training_loop(
             train_epoch(model, train_dataloader, optimizer, lr_scheduler)
 
         preds, labels = validation_epoch(model, val_dataloader)
-        val_acc = get_validation_acc(preds, labels, dataset_name, dataset_name)
-        val_accs.append(val_acc)
+        if val_callback:
+            val_acc = val_callback(model)
+        else:
+            val_acc = get_validation_acc(preds, labels, dataset_name, dataset_name)
+            val_accs.append(val_acc)
         if val_acc > best_val_acc:
             torch.save(model.state_dict(), save_path)
         print(f"Val Accuracy Train epoch {i+1}: {round(100*val_acc,3)}%")
         if val_acc < 0.2:
             print(f"Model collapsed, restarting from last epoch.")
             model.load_state_dict(torch.load(save_path))
-
     if n_epochs > 1:
         # Make ranadeep happy
         plt.xlabel("epoch")
@@ -515,7 +518,7 @@ def training_loop(
     return model
 
 
-def pipeline(hparams, run_aug=False, load_weights=False, use_unshared=False):
+def pipeline(hparams, run_aug=False, load_weights=False, use_unshared=False, val_callback=None):
     torch.cuda.empty_cache()
     if use_unshared:
         train_dataset = get_dataset(hparams["dataset"], "unshared")
@@ -560,6 +563,7 @@ def pipeline(hparams, run_aug=False, load_weights=False, use_unshared=False):
         hparams["dataset"],
         n_epochs,
         hparams["save_path"],
+        val_callback=val_callback
     )
 
 

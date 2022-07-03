@@ -126,7 +126,7 @@ class MapperModel(torch.nn.Module):
         )
         self.to(device)
 
-    def encode(self, batch: dict, output_label='y') -> torch.Tensor:
+    def encode(self, batch: dict, output_type='y') -> torch.Tensor:
         """
         Use a transformer to encode x into an embedding dimension E.
 
@@ -134,7 +134,7 @@ class MapperModel(torch.nn.Module):
         Embeddings of shape
         [batch_size, sentence_length, embedding_dim_size]
         """
-        model = self.model_y if output_label == 'y' else self.model_z
+        model = self.model_y if output_type == 'y' else self.model_z
         batch["input_ids"] = batch["input_ids"].to(device)
         batch["attention_mask"] = batch["attention_mask"].to(device)
         if "labels" in batch:

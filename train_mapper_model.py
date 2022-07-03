@@ -277,10 +277,10 @@ def train_model(
     def linear_2_phase(end_ratio, epoch):
         phase_1_epochs = parameters.only_supervised_epochs
         phase_2_epochs = parameters.total_epochs - parameters.only_supervised_epochs
-        if epoch < phase_1_epochs:
+        if epoch <= phase_1_epochs:
             return 1
         else:
-            return interpolate_geometric(1, end_ratio, epoch - phase_1_epochs / phase_2_epochs)
+            return interpolate_geometric(1, end_ratio, (epoch - phase_1_epochs) / max(1, phase_2_epochs))
 
     scheduler = LambdaLR(
         optimizer,
