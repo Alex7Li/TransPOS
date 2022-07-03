@@ -30,7 +30,6 @@ def normal_model_baseline(train_dataset_name, model_name):
         # validation
         preds, labels = training.validation_epoch(model, val_dataloader)
         acc = dataloading_utils.get_acc(preds, labels)
-        print(acc)
         return acc
     trained_model = training.pipeline(hparams, load_weights=True, use_unshared=True, val_callback=print_val_callback)
     return print_val_callback(trained_model), trained_model.eval()
@@ -43,6 +42,8 @@ def normal_model_baseline(train_dataset_name, model_name):
 # Accuracy on ark: 94.3950%
 # Accuracy on tweebank: 94.7509% (94.7954% on second run)
 def main_normal_model():
+    if not os.path.exists("models"):
+        os.mkdir("models")
     model_name = 'gpt2'
     ark_acc, _ = normal_model_baseline("tweebank", model_name)
     print(f"Accuracy on ark: {100*ark_acc:.4f}%")
