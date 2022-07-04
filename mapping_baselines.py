@@ -5,7 +5,7 @@ import dataloading_utils
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 
 
-def normal_model_baseline(train_dataset_name, model_name):
+def normal_model_baseline(train_dataset_name, model_name, n_epochs, batch_size):
     (twee_shared, ark_shared) = create_tweebank_ark_dataset()
     if train_dataset_name == "ark":
         val_dataset = ark_shared
@@ -14,7 +14,7 @@ def normal_model_baseline(train_dataset_name, model_name):
     else:
         raise NotImplementedError
     hparams = {
-        "n_epochs": 15,
+        "n_epochs": n_epochs,
         "batch_size": 32,
         "dataset": train_dataset_name,
         "model_name": model_name,
@@ -41,15 +41,14 @@ def normal_model_baseline(train_dataset_name, model_name):
 # 10 epochs:
 # Accuracy on ark: 94.3950%
 # Accuracy on tweebank: 94.7509% (94.7954% on second run)
-def main_normal_model():
+def main_normal_model(model_name, n_epochs, batch_size):
     if not os.path.exists("models"):
         os.mkdir("models")
-    model_name = 'gpt2'
-    ark_acc, _ = normal_model_baseline("tweebank", model_name)
+    ark_acc, _ = normal_model_baseline("tweebank", model_name, n_epochs, batch_size)
     print(f"Accuracy on ark: {100*ark_acc:.4f}%")
-    twee_acc, _ = normal_model_baseline("ark", model_name)
+    twee_acc, _ = normal_model_baseline("ark", model_name, n_epochs, batch_size)
     print(f"Accuracy on tweebank: {100*twee_acc:.4f}%")
 
 
 if __name__ == "__main__":
-    main_normal_model()
+    main_normal_model('gpt2', 12, 32)
