@@ -18,7 +18,8 @@ def hardToSoftLabel(
     hard_label = torch.clone(hard_label)
     hard_label[hard_label == -100] += 100
     one_hot = F.one_hot(hard_label, n_classes)
-    one_hot = one_hot.float().to(device)
+    # Scale one_hot up because weight initalization usually assumes random N(0, 1) distribution for the previous layer
+    one_hot = one_hot.float().to(device) * torch.sqrt(torch.tensor(n_classes, dtype=torch.float32, device=hard_label.device))
     one_hot -= torch.unsqueeze(torch.mean(one_hot, dim=2), 2)
     return one_hot
 

@@ -474,7 +474,7 @@ def training_loop(
     aug=False,
     val_callback=None
 ):
-    optimizer = torch.optim.NAdam(model.parameters(), lr=3e-5, weight_decay=1e-4)
+    optimizer = torch.optim.NAdam(model.parameters(), lr=6e-5, weight_decay=1e-4)
 
     lr_scheduler = get_scheduler(
         name="linear",
