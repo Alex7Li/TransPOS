@@ -27,7 +27,7 @@ class MapperTrainingParameters:
         alpha: Optional[float] = 1.0,
         batch_size=16,
         tqdm=False,
-        decoder_use_x=True,
+        x_dropout=.92,
         lr=2e-3,
         lr_fine_tune=2e-5,
         use_shared_encoder=True
@@ -40,7 +40,7 @@ class MapperTrainingParameters:
         self.only_supervised_epochs = only_supervised_epochs
         self.batch_size = batch_size
         self.tqdm=tqdm
-        self.decoder_use_x=decoder_use_x
+        self.x_dropout=x_dropout
         self.lr=lr
         self.lr_fine_tune=lr_fine_tune
         self.use_shared_encoder=use_shared_encoder
@@ -204,8 +204,6 @@ def model_validation_acc(
 ) -> Tuple[float, float]:
     if cur_epoch % 3 == 0:  # do all losses
         val_types = ["x baseline", "no_label_input", "ours"]
-        if not parameters.decoder_use_x:
-            val_types += ["independent"]
         for val_type in val_types:
             (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
                 model, shared_val_dataset, val_type, parameters
@@ -323,10 +321,7 @@ def main(
     parameters=None,
 ):
     if parameters == None:
-        parameters = MapperTrainingParameters(
-            alpha=1.0, total_epochs=24,
-            only_supervised_epochs=8, decoder_use_x=False
-        )
+        parameters = MapperTrainingParameters()
     save_path = Path("models") / (
         model_name.split("/")[-1] + "_mapper_" + y_dataset_name + "_" + z_dataset_name
     )

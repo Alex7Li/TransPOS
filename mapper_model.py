@@ -26,7 +26,7 @@ def hardToSoftLabel(
 
 class Label2LabelDecoder(torch.nn.Module):
     def __init__(
-        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, use_x=True
+        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, x_drop=.92
     ):
         super().__init__()
         self.n_y_labels = n_y_labels
@@ -44,18 +44,14 @@ class Label2LabelDecoder(torch.nn.Module):
             y_embed_dim, rnn_hidden, num_layers=2, batch_first=True, bidirectional=True
         )
         xy_hidden = 512
-        self.use_x = use_x
-        if use_x:
-            # Huge so that the second layer can't just rely on x!
-            self.x_dropout = nn.Dropout(p=.88, inplace=True)
-            self.xydecoding = nn.Sequential(
-                nn.Linear(2 * rnn_hidden + embedding_dim, xy_hidden),
-                nn.LayerNorm(xy_hidden),
-                nn.GELU(),
-                nn.Linear(xy_hidden, n_z_labels),
-            )
-        else:
-            self.xydecoding = nn.Linear(2 * rnn_hidden, n_z_labels)
+        # Huge so that the second layer can't just rely on x!
+        self.x_dropout = nn.Dropout(p=x_drop, inplace=True)
+        self.xydecoding = nn.Sequential(
+            nn.Linear(2 * rnn_hidden + embedding_dim, xy_hidden),
+            nn.LayerNorm(xy_hidden),
+            nn.GELU(),
+            nn.Linear(xy_hidden, n_z_labels),
+        )
 
     def preprocess_label(self, label):
         if len(label.shape) == 3:
@@ -75,11 +71,8 @@ class Label2LabelDecoder(torch.nn.Module):
         # rnn_init: [n_layers * 2, B, rnn_hidden]
         assert len(rnn_init.shape) == 3
         y, _ = self.yRNN.forward(y, rnn_init)
-        if self.use_x:
-            e = self.x_dropout(e)
-            ycat = torch.cat([e, y], dim=2)
-        else:
-            ycat = y
+        e = self.x_dropout(e)
+        ycat = torch.cat([e, y], dim=2)
         pred_z = self.xydecoding(ycat)
         return pred_z
 
@@ -101,9 +94,9 @@ class MapperModel(torch.nn.Module):
         elif base_transformer_name == "gpt2":
             embedding_dim_size = 768
         self.yzdecoding = Label2LabelDecoder(
-            embedding_dim_size, n_y_labels, n_z_labels, parameters.decoder_use_x)
+            embedding_dim_size, n_y_labels, n_z_labels, parameters.x_dropout)
         self.zydecoding = Label2LabelDecoder(
-            embedding_dim_size, n_z_labels, n_y_labels, parameters.decoder_use_x)
+            embedding_dim_size, n_z_labels, n_y_labels, parameters.x_dropout)
         self.ydecoding = nn.Sequential(
             nn.Linear(embedding_dim_size, n_y_labels),
         )
