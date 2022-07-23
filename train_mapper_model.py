@@ -2,6 +2,7 @@ from mapper_model import MapperModel
 import dataloading_utils
 from dataloading_utils import TransformerCompatDataset, flatten_preds_and_labels
 import torch
+import torch.optim
 from collections import defaultdict
 from functools import partial
 from tqdm import tqdm as std_tqdm
@@ -16,7 +17,6 @@ import os
 from torch.optim.lr_scheduler import LambdaLR
 from typing import Tuple, Optional
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
-import torch.optim.lr_scheduler
 
 
 class MapperTrainingParameters:
@@ -27,9 +27,9 @@ class MapperTrainingParameters:
         alpha: Optional[float] = 1.0,
         batch_size=16,
         tqdm=False,
-        x_dropout=.92,
-        lr=2e-3,
-        lr_fine_tune=2e-5,
+        x_dropout=.9,
+        lr=6e-5,
+        lr_fine_tune=6e-5,
         use_shared_encoder=True
     ) -> None:
         super()
