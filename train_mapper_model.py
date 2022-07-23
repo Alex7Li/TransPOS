@@ -116,12 +116,12 @@ def train_epoch(
         total_loss = torch.tensor(0.0).to(parameters.device)
         # for k, v in batch_loss_z.items():
         #     losses[k] += v
-        # for k, batch_loss in losses.items():
-        #     total_loss += batch_loss
-        #     if k in avg_losses:
-        #         avg_losses[k] = batch_loss.item()
-        #     else:
-        #         avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
+        for k, batch_loss in losses.items():
+            total_loss += batch_loss
+            if k in avg_losses:
+                avg_losses[k] = batch_loss.item()
+            else:
+                avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
         if parameters.tqdm:
             pbar.set_postfix({k: v.item() for k, v in losses.items()})
         total_loss.backward()
