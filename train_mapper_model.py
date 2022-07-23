@@ -70,16 +70,16 @@ def compose_loss(
     labels = batch["labels"]
     del batch["labels"]
     e_y = encode_y(batch)
-    z_tilde = supervisor_z(e_y)
-    y_tilde = decode_z(e_y, z_tilde)
-    y_pred_probs = F.softmax(y_tilde, dim=2)
-    y_pred = torch.argmax(y_pred_probs, dim=2)
-    correct = torch.sum(y_pred == labels)
+    # z_tilde = supervisor_z(e_y)
+    # y_tilde = decode_z(e_y, z_tilde)
+    # y_pred_probs = F.softmax(y_tilde, dim=2)
+    # y_pred = torch.argmax(y_pred_probs, dim=2)
+    correct = 0 # torch.sum(y_pred == labels)
     total = torch.sum(labels != -100)
     loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
     losses = {}
-    if epoch_ind >= parameters.only_supervised_epochs:
-        losses["full CE"] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
+    # if epoch_ind >= parameters.only_supervised_epochs:
+    #     losses["full CE"] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
     if parameters.alpha is not None:
         # supervisor should be accurate
         super_y_logits = supervisor_y(e_y)
