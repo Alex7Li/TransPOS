@@ -17,7 +17,7 @@ import os
 from torch.optim.lr_scheduler import LambdaLR
 from typing import Tuple, Optional
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
-
+from transformers import get_scheduler
 
 class MapperTrainingParameters:
     def __init__(
@@ -101,9 +101,9 @@ def train_epoch(
     model.train()
     avg_losses = defaultdict(lambda: 0.0)
     correct_y = 0
-    correct_z = 0
+    correct_z = 0.0001
     total_y = 0
-    total_z = 0
+    total_z = 0.0001
     pbar = zip(y_dataloader, z_dataloader)
     if parameters.tqdm:
         n_iters = min(len(y_dataloader), len(z_dataloader))
@@ -111,17 +111,17 @@ def train_epoch(
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in pbar:
         batch_loss_y, cy, ty = compose_loss(batch_y, model, parameters, "y", cur_epoch)
-        batch_loss_z, cz, tz = compose_loss(batch_z, model, parameters, "z", cur_epoch)
+        # batch_loss_z, cz, tz = compose_loss(batch_z, model, parameters, "z", cur_epoch)
         losses = batch_loss_y
         total_loss = torch.tensor(0.0).to(parameters.device)
-        for k, v in batch_loss_z.items():
-            losses[k] += v
-        for k, batch_loss in losses.items():
-            total_loss += batch_loss
-            if k in avg_losses:
-                avg_losses[k] = batch_loss.item()
-            else:
-                avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
+        # for k, v in batch_loss_z.items():
+        #     losses[k] += v
+        # for k, batch_loss in losses.items():
+        #     total_loss += batch_loss
+        #     if k in avg_losses:
+        #         avg_losses[k] = batch_loss.item()
+        #     else:
+        #         avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
         if parameters.tqdm:
             pbar.set_postfix({k: v.item() for k, v in losses.items()})
         total_loss.backward()
@@ -130,8 +130,8 @@ def train_epoch(
 
         correct_y += cy
         total_y += ty
-        correct_z += cz
-        total_z += tz
+        # correct_z += cz
+        # total_z += tz
     if cur_epoch >= parameters.only_supervised_epochs:
         print(
             f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
@@ -259,33 +259,39 @@ def train_model(
         ]
     )
 
-    def interpolate_geometric(low:float, high:float, dist:float):
-        """
-        Find a the point dist/100 percent of the way from low to high
-        on a log scale.
+    # def interpolate_geometric(low:float, high:float, dist:float):
+    #     """
+    #     Find a the point dist/100 percent of the way from low to high
+    #     on a log scale.
         
-        Dist is a parameter between
-        0 and 1 indicating how close to low/high it should be.
-        """
-        loghi = np.log(high)
-        loglow = np.log(low)
-        logmid = loglow * (1 - dist) + loghi * dist
-        return np.exp(logmid)
+    #     Dist is a parameter between
+    #     0 and 1 indicating how close to low/high it should be.
+    #     """
+    #     loghi = np.log(high)
+    #     loglow = np.log(low)
+    #     logmid = loglow * (1 - dist) + loghi * dist
+    #     return np.exp(logmid)
 
-    def linear_2_phase(end_ratio, epoch):
-        phase_1_epochs = parameters.only_supervised_epochs
-        phase_2_epochs = parameters.total_epochs - parameters.only_supervised_epochs
-        if epoch <= phase_1_epochs:
-            return 1
-        else:
-            return interpolate_geometric(1, end_ratio, (epoch - phase_1_epochs) / max(1, phase_2_epochs))
+    # def linear_2_phase(end_ratio, epoch):
+    #     phase_1_epochs = parameters.only_supervised_epochs
+    #     phase_2_epochs = parameters.total_epochs - parameters.only_supervised_epochs
+    #     if epoch <= phase_1_epochs:
+    #         return 1
+    #     else:
+    #         return interpolate_geometric(1, end_ratio, (epoch - phase_1_epochs) / max(1, phase_2_epochs))
 
-    scheduler = LambdaLR(
-        optimizer,
-        lr_lambda=[
-            lambda _:1,
-            partial(linear_2_phase, parameters.lr_fine_tune / parameters.lr)
-        ]
+    # scheduler = LambdaLR(
+    #     optimizer,
+    #     lr_lambda=[
+    #         lambda _:1,
+    #         partial(linear_2_phase, parameters.lr_fine_tune / parameters.lr)
+    #     ]
+    # )
+    scheduler = get_scheduler(
+        name="linear",
+        optimizer=optimizer,
+        num_warmup_steps=0,
+        num_training_steps=min(len(y_dataloader), len(z_dataloader)) * n_epochs,
     )
     best_validation_acc = 0
     valid_acc = 0

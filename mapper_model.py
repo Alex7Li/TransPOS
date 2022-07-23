@@ -26,7 +26,7 @@ def hardToSoftLabel(
 
 class Label2LabelDecoder(torch.nn.Module):
     def __init__(
-        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, x_drop=.92
+        self, embedding_dim: int, n_y_labels: int, n_z_labels: int, x_drop: float
     ):
         super().__init__()
         self.n_y_labels = n_y_labels

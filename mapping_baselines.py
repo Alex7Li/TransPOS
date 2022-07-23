@@ -1,11 +1,10 @@
 import training
-import numpy as np
 import os
 import dataloading_utils
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
 
 
-def normal_model_baseline(train_dataset_name, model_name, n_epochs, batch_size):
+def normal_model_baseline(train_dataset_name, model_name, n_epochs):
     (twee_shared, ark_shared) = create_tweebank_ark_dataset()
     if train_dataset_name == "ark":
         val_dataset = ark_shared
@@ -41,12 +40,12 @@ def normal_model_baseline(train_dataset_name, model_name, n_epochs, batch_size):
 # 10 epochs:
 # Accuracy on ark: 94.3950%
 # Accuracy on tweebank: 94.7509% (94.7954% on second run)
-def main_normal_model(model_name, n_epochs, batch_size):
+def main_normal_model(model_name, n_epochs):
     if not os.path.exists("models"):
         os.mkdir("models")
-    ark_acc, _ = normal_model_baseline("tweebank", model_name, n_epochs, batch_size)
+    ark_acc, _ = normal_model_baseline("tweebank", model_name, n_epochs)
     print(f"Accuracy on ark: {100*ark_acc:.4f}%")
-    twee_acc, _ = normal_model_baseline("ark", model_name, n_epochs, batch_size)
+    twee_acc, _ = normal_model_baseline("ark", model_name, n_epochs)
     print(f"Accuracy on tweebank: {100*twee_acc:.4f}%")
 
 
