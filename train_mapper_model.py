@@ -62,31 +62,33 @@ def compose_loss(
     """
     # decode_y = model.decode_y if input_label == "y" else model.decode_z
     # decode_z = model.decode_y if input_label == "y" else model.decode_z
-    encode_y = model.encode_y  if input_label == "y" else model.encode_z
-    supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
-    supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
+    # encode_y = model.encode_y  if input_label == "y" else model.encode_z
+    # supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
+    # supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
 
     batch = {k: v.to(parameters.device) for k, v in batch.items()}
-    labels = batch["labels"]
-    del batch["labels"]
-    e_y = encode_y(batch)
+    # e_y = encode_y(batch)
     # z_tilde = supervisor_z(e_y)
     # y_tilde = decode_z(e_y, z_tilde)
     # y_pred_probs = F.softmax(y_tilde, dim=2)
     # y_pred = torch.argmax(y_pred_probs, dim=2)
-    correct = 0 # torch.sum(y_pred == labels)
-    total = torch.sum(labels != -100)
-    loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
-    losses = {}
+    # correct = 0 # torch.sum(y_pred == labels)
+    # total = torch.sum(labels != -100)
+    # loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
+    # losses = {}
     # if epoch_ind >= parameters.only_supervised_epochs:
     #     losses["full CE"] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
-    if parameters.alpha is not None:
-        # supervisor should be accurate
-        super_y_logits = supervisor_y(e_y)
-        super_probs = F.softmax(super_y_logits, dim=2)
-        losses["supervised CE"] = (
-            loss_f(super_probs.flatten(0, 1), labels.flatten()) * parameters.alpha
-        )
+    # if parameters.alpha is not None:
+    #     # supervisor should be accurate
+    #     super_y_logits = supervisor_y(e_y)
+    #     super_probs = F.softmax(super_y_logits, dim=2)
+    #     losses["supervised CE"] = (
+    #         loss_f(super_probs.flatten(0, 1), labels.flatten()) * parameters.alpha
+    #     )
+    losses = {}
+    logits, losses['supervised CE'] = model.forward_y(batch)
+    correct = 0
+    total = 0
     return losses, correct, total
 
 
@@ -168,23 +170,29 @@ def get_validation_predictions(
     for y_batch, z_batch in pbar:
         y_true =  y_batch['labels']
         z_true =  z_batch['labels']
-        e_y = model.encode_y(y_batch)
-        if parameters.use_shared_encoder:
-            e_z = e_y
-        else:
-            e_z = model.encode_z(z_batch)
+        # e_y = model.encode_y(y_batch)
+        # if parameters.use_shared_encoder:
+        #     e_z = e_y
+        # else:
+        #     e_z = model.encode_z(z_batch)
         if inference_type == "ours":
-            z_pred = torch.argmax(model.decode_z(e_z, y_true), dim=2)
-            y_pred = torch.argmax(model.decode_y(e_y, z_true), dim=2)
+            pass
+            # z_pred = torch.argmax(model.decode_z(e_z, y_true), dim=2)
+            # y_pred = torch.argmax(model.decode_y(e_y, z_true), dim=2)
         elif inference_type == "x baseline":
-            y_pred = torch.argmax(model.ydecoding(e_y), dim=2)
-            z_pred = torch.argmax(model.zdecoding(e_z), dim=2)
+            # y_pred = torch.argmax(model.ydecoding(e_y), dim=2)
+            # z_pred = torch.argmax(model.zdecoding(e_z), dim=2)
+            y_pred = torch.argmax(model.forward_y(y_batch)[0], dim=2)
+            z_pred = y_pred
+            # z_pred = torch.argmax(model.zdecoding(e_z), dim=2)
         elif inference_type == "no_label_input":
-            y_pred = torch.argmax(model.decode_y(e_y, model.zdecoding(e_z)), dim=2)
-            z_pred = torch.argmax(model.decode_z(e_z, model.ydecoding(e_y)), dim=2)
+            pass
+            # y_pred = torch.argmax(model.decode_y(e_y, model.zdecoding(e_z)), dim=2)
+            # z_pred = torch.argmax(model.decode_z(e_z, model.ydecoding(e_y)), dim=2)
         elif inference_type == "independent":
-            y_pred = torch.argmax(model.ydecoding(e_y) + model.decode_y(e_y, z_true), dim=2)
-            z_pred = torch.argmax(model.zdecoding(e_z) + model.decode_z(e_z, y_true), dim=2)
+            pass
+            # y_pred = torch.argmax(model.ydecoding(e_y) + model.decode_y(e_y, z_true), dim=2)
+            # z_pred = torch.argmax(model.zdecoding(e_z) + model.decode_z(e_z, y_true), dim=2)
         else:
             raise NotImplementedError()
         labels_y.append(y_true)

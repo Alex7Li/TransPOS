@@ -84,6 +84,7 @@ class MapperModel(torch.nn.Module):
         self.base_transformer_name = base_transformer_name
         self.n_y_labels = n_y_labels
         self.n_z_labels = n_z_labels
+        self.full_model = load_model(base_transformer_name, n_y_labels)
         self.model_y = AutoModel.from_pretrained(base_transformer_name)
         if parameters.use_shared_encoder:
             self.model_z = self.model_y
@@ -94,16 +95,16 @@ class MapperModel(torch.nn.Module):
             embedding_dim_size = 1024
         elif base_transformer_name == "gpt2":
             embedding_dim_size = 768
-        self.yzdecoding = Label2LabelDecoder(
-            embedding_dim_size, n_y_labels, n_z_labels, parameters.x_dropout)
-        self.zydecoding = Label2LabelDecoder(
-            embedding_dim_size, n_z_labels, n_y_labels, parameters.x_dropout)
-        self.ydecoding = nn.Sequential(
-            nn.Linear(embedding_dim_size, n_y_labels),
-        )
-        self.zdecoding = nn.Sequential(
-            nn.Linear(embedding_dim_size, n_z_labels),
-        )
+        # self.yzdecoding = Label2LabelDecoder(
+        #     embedding_dim_size, n_y_labels, n_z_labels, parameters.x_dropout)
+        # self.zydecoding = Label2LabelDecoder(
+        #     embedding_dim_size, n_z_labels, n_y_labels, parameters.x_dropout)
+        # self.ydecoding = nn.Sequential(
+        #     nn.Linear(embedding_dim_size, n_y_labels),
+        # )
+        # self.zdecoding = nn.Sequential(
+        #     nn.Linear(embedding_dim_size, n_z_labels),
+        # )
         if parameters.use_shared_encoder:
             self.pretrained_params = itertools.chain(
                 self.model_y.parameters(),
@@ -114,10 +115,11 @@ class MapperModel(torch.nn.Module):
                 self.model_z.parameters(),
             )
         self.auxilary_params = itertools.chain(
-            self.yzdecoding.parameters(),
-            self.zydecoding.parameters(),
-            self.ydecoding.parameters(),
-            self.zdecoding.parameters(),
+            self.full_model.parameters(),
+            # self.yzdecoding.parameters(),
+            # self.zydecoding.parameters(),
+            # self.ydecoding.parameters(),
+            # self.zdecoding.parameters(),
         )
         self.to(device)
 
@@ -165,3 +167,9 @@ class MapperModel(torch.nn.Module):
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
         return self.zydecoding(e_y, z)
+
+    def forward_y(self, batch):
+        batch["input_ids"] = batch["input_ids"].to(device)
+        batch["attention_mask"] = batch["attention_mask"].to(device)
+        result = self.full_model(**batch)
+        return result.logits, result.loss
