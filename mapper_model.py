@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torch.nn.init
 import itertools
+from training import load_model
 from torch.distributions import Categorical
 from transformers import AutoModel
 

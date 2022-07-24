@@ -27,7 +27,7 @@ class MapperTrainingParameters:
         alpha: Optional[float] = 1.0,
         batch_size=16,
         tqdm=False,
-        x_dropout=.9,
+        x_dropout=.1,
         lr=6e-5,
         lr_fine_tune=6e-5,
         use_shared_encoder=True
@@ -61,7 +61,7 @@ def compose_loss(
     variable names will assume the first term)
     """
     # decode_y = model.decode_y if input_label == "y" else model.decode_z
-    decode_z = model.decode_y if input_label == "y" else model.decode_z
+    # decode_z = model.decode_y if input_label == "y" else model.decode_z
     encode_y = model.encode_y  if input_label == "y" else model.encode_z
     supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
     supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
@@ -202,7 +202,7 @@ def model_validation_acc(
     cur_epoch: int,
     parameters: MapperTrainingParameters,
 ) -> Tuple[float, float]:
-    if cur_epoch % 3 == 0:  # do all losses
+    if cur_epoch % 3 == 0 and cur_epoch > parameters.only_supervised_epochs:  # do all losses
         val_types = ["x baseline", "no_label_input", "ours"]
         for val_type in val_types:
             (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
@@ -360,4 +360,4 @@ def main(
 
 if __name__ == "__main__":
     # main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)
-    main("tweebank", "ark", "gpt2", load_cached_weights=False)
+    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)
