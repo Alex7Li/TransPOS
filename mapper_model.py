@@ -171,5 +171,6 @@ class MapperModel(torch.nn.Module):
     def forward_y(self, batch):
         batch["input_ids"] = batch["input_ids"].to(device)
         batch["attention_mask"] = batch["attention_mask"].to(device)
+        batch["labels"] = batch["labels"].to(device)
         result = self.full_model(**batch)
         return result.logits, result.loss
