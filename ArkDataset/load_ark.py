@@ -82,38 +82,38 @@ def ark_pos_mapping_test():
     assert ARK_POS_INDEX_MAPPING["L"] == 22
     assert ARK_INDEX_POS_MAPPING[7] == "R"
 
+ARK_POS_TAGS = [
+    "N",
+    "O",
+    "^",
+    "S",
+    "Z",
+    "V",
+    "A",
+    "R",
+    "!",
+    "D",
+    "P",
+    "&",
+    "T",
+    "X",
+    "#",
+    "@",
+    "~",
+    "U",
+    "E",
+    "$",
+    ",",
+    "G",
+    "L",
+    "M",
+    "Y",
+]
 
 class ArkDataset(torch.utils.data.Dataset):
     def __init__(self, data_path):
         self.data_path = data_path
 
-        ARK_POS_TAGS = [
-            "N",
-            "O",
-            "^",
-            "S",
-            "Z",
-            "V",
-            "A",
-            "R",
-            "!",
-            "D",
-            "P",
-            "&",
-            "T",
-            "X",
-            "#",
-            "@",
-            "~",
-            "U",
-            "E",
-            "$",
-            ",",
-            "G",
-            "L",
-            "M",
-            "Y",
-        ]
 
         ARK_POS_INDEX_MAPPING, ARK_INDEX_POS_MAPPING = create_pos_mapping(ARK_POS_TAGS)
         self.ARK_POS_INDEX_MAPPING = ARK_POS_INDEX_MAPPING

@@ -1,11 +1,13 @@
 import numpy as np
 import os
 import pickle
+from ArkDataset.load_ark import ARK_POS_TAGS
+from augmented_datasets import TWEEBANK_POS_MAPPING
 from training import dataset_names
 import seaborn
 import pandas as pd
 import matplotlib.pyplot as plt
-
+from EncoderDecoderDataloaders import shared_examples
 
 def main(results, path):
     if not os.path.isdir("./Results"):
@@ -49,12 +51,31 @@ def main(results, path):
     plt.savefig(path)
     print("Saved to " + path)
 
+def shared_confusion(path):
+    shared_set = shared_examples
+    counts = np.zeros((17, 25), dtype=np.int16)
+    for x, y, z in shared_set:
+        for yi, zi in zip(y, z):
+            counts[zi][yi] += 1
+    df = pd.DataFrame(counts, columns=ARK_POS_TAGS,
+        index=list(TWEEBANK_POS_MAPPING.keys()))
+    heatmap = seaborn.heatmap(
+        df,
+        annot=True,
+        fmt="d",
+    )
+    heatmap.set_title("Validation set label distribution")
+    heatmap.set_xlabel("Akk Label")
+    heatmap.set_ylabel("Tweebank Label")
+    plt.subplots_adjust(hspace=0.375)
+    plt.savefig(path)
+    print("Saved to " + path)
 
 if __name__ == "__main__":
-    # in_path = 'model_out.pkl'
-    in_path = "psuedolabel_out.pkl"
-    with open(in_path, "rb") as f:
-        results = pickle.load(f)
+    # in_path = "psuedolabel_out.pkl"
+    # with open(in_path, "rb") as f:
+    #     results = pickle.load(f)
     # results = {'bert-large-cased': {'TPANN': {'tweebank': 77.97622165191432, 'GUM': 84.1633648277964, 'TPANN': 92.44871235268441}, 'GUM': {'tweebank': 78.97135075682186, 'GUM': 97.59219750076197, 'TPANN': 75.29463116542995}, 'tweebank': {'tweebank': 94.23872623474571, 'GUM': 92.99603779335568, 'TPANN': 77.6080314273243}}, 'gpt2': {'TPANN': {'tweebank': 73.29143754909663, 'GUM': 80.58518744285279, 'TPANN': 88.21475338280227}, 'GUM': {'tweebank': 74.49594134590207, 'GUM': 93.85553185004571, 'TPANN': 74.29070274989088}, 'tweebank': {'tweebank': 89.41084053417126, 'GUM': 88.40597378847912, 'TPANN': 76.77869925796595}}, 'vinai/bertweet-large': {'TPANN': {'tweebank': 75.74757789997382, 'GUM': 86.40658335873209, 'TPANN': 94.84941073766913}, 'GUM': {'tweebank': 79.40822204765645, 'GUM': 97.48247485522707, 'TPANN': 77.91357485814055}, 'tweebank': {'tweebank': 95.65854935847081, 'GUM': 93.27034440719292, 'TPANN': 81.36185072020952}}, 'roberta-large': {'TPANN': {'tweebank': 75.30243519245876, 'GUM': 86.98567509905517, 'TPANN': 94.7184635530336}, 'GUM': {'tweebank': 78.70123068866195, 'GUM': 96.7997561718988, 'TPANN': 77.91357485814055}, 'tweebank': {'tweebank': 95.26577638125163, 'GUM': 93.27644010972264, 'TPANN': 78.13182016586644}}}
-    path = "./Results/" + in_path.split(".")[0]
-    main(results, path)
+    # path = "./Results/" + in_path.split(".")[0]
+    # main(results, path)
+    shared_confusion("./Results/validation_distribution")

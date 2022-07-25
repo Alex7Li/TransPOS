@@ -80,7 +80,6 @@ def compose_loss(
         correct = torch.sum(y_pred == labels)
         total = torch.sum(labels != -100)
     if parameters.alpha is not None:
-        losses = {}
         super_y_logits = supervisor_y(e_y)
         ce_loss = (
             loss_f(super_y_logits.flatten(0, 1), labels.flatten()) * parameters.alpha
@@ -125,7 +124,7 @@ def train_epoch(
             else:
                 avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
         if parameters.tqdm:
-            pbar.set_postfix({k: v.item() for k, v in losses.items()})
+            pbar.set_postfix({k: v for k, v in avg_losses.items()})
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
