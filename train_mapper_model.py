@@ -67,28 +67,30 @@ def compose_loss(
     # supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
 
     batch = {k: v.to(parameters.device) for k, v in batch.items()}
+    labels = batch['labels']
     # e_y = encode_y(batch)
     # z_tilde = supervisor_z(e_y)
     # y_tilde = decode_z(e_y, z_tilde)
     # y_pred_probs = F.softmax(y_tilde, dim=2)
-    # y_pred = torch.argmax(y_pred_probs, dim=2)
-    # correct = 0 # torch.sum(y_pred == labels)
-    # total = torch.sum(labels != -100)
     # loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
     # losses = {}
     # if epoch_ind >= parameters.only_supervised_epochs:
     #     losses["full CE"] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
-    # if parameters.alpha is not None:
+        # y_pred = torch.argmax(y_pred_probs, dim=2)
+        # correct = torch.sum(y_pred == labels)
+        # total = torch.sum(labels != -100)
+    if parameters.alpha is not None:
     #     # supervisor should be accurate
     #     super_y_logits = supervisor_y(e_y)
     #     super_probs = F.softmax(super_y_logits, dim=2)
     #     losses["supervised CE"] = (
     #         loss_f(super_probs.flatten(0, 1), labels.flatten()) * parameters.alpha
     #     )
-    losses = {}
-    logits, losses['supervised CE'] = model.forward_y(batch)
-    correct = 0
-    total = 0
+        losses = {}
+        y_tilde, losses['supervised CE'] = model.forward_y(batch)
+        y_pred = torch.argmax(y_tilde, dim=2)
+        correct = torch.sum(y_pred == labels)
+        total = torch.sum(labels != -100)
     return losses, correct, total
 
 
@@ -134,10 +136,10 @@ def train_epoch(
         total_y += ty
         # correct_z += cz
         # total_z += tz
-    if cur_epoch >= parameters.only_supervised_epochs:
-        print(
-            f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
-        )
+    print(
+        f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
+    )
+    print(f"Train losses: {avg_losses}")
 
 
 def get_validation_predictions(
@@ -210,6 +212,7 @@ def model_validation_acc(
     cur_epoch: int,
     parameters: MapperTrainingParameters,
 ) -> Tuple[float, float]:
+    model.eval()
     if cur_epoch % 3 == 0 and cur_epoch > parameters.only_supervised_epochs:  # do all losses
         val_types = ["x baseline", "no_label_input", "ours"]
         for val_type in val_types:
@@ -252,18 +255,11 @@ def train_model(
         [
             {
                 "params": itertools.chain(
-                    model.pretrained_params
+                    model.parameters()
                 ),
                 "lr": parameters.lr_fine_tune,
                 "weight_decay": 1e-4,
-            },
-            {
-                "params": itertools.chain(
-                    model.auxilary_params
-                ),
-                "lr": parameters.lr,
-                "weight_decay": 1e-4,
-            },
+            }
         ]
     )
 
@@ -308,6 +304,7 @@ def train_model(
         pbar = tqdm(range(0, n_epochs),
             desc="Training epochs",
         )
+    torch.save(model.state_dict(), save_path)
     for epoch_index in pbar:
         print(f"Epoch {epoch_index + 1}/{n_epochs}")
         train_epoch(
@@ -317,8 +314,11 @@ def train_model(
             valid_acc_y, valid_acc_z = model_validation_acc(
                 model, shared_val_dataset, epoch_index, parameters
             )
-            valid_acc = math.sqrt(valid_acc_y * valid_acc_z)  # Geometric Mean
-        if valid_acc >= best_validation_acc:
+            valid_acc = valid_acc_y #math.sqrt(valid_acc_y * valid_acc_z)  # Geometric Mean
+        if valid_acc < 0.2:
+            print(f"Model collapsed, restarting from best epoch.")
+            model.load_state_dict(torch.load(save_path))
+        elif valid_acc >= best_validation_acc:
             best_validation_acc = valid_acc
             os.makedirs(os.path.split(save_path)[0], exist_ok=True)
             print("Saving this model")

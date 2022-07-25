@@ -95,16 +95,16 @@ class MapperModel(torch.nn.Module):
             embedding_dim_size = 1024
         elif base_transformer_name == "gpt2":
             embedding_dim_size = 768
-        # self.yzdecoding = Label2LabelDecoder(
-        #     embedding_dim_size, n_y_labels, n_z_labels, parameters.x_dropout)
-        # self.zydecoding = Label2LabelDecoder(
-        #     embedding_dim_size, n_z_labels, n_y_labels, parameters.x_dropout)
-        # self.ydecoding = nn.Sequential(
-        #     nn.Linear(embedding_dim_size, n_y_labels),
-        # )
-        # self.zdecoding = nn.Sequential(
-        #     nn.Linear(embedding_dim_size, n_z_labels),
-        # )
+        self.yzdecoding = Label2LabelDecoder(
+            embedding_dim_size, n_y_labels, n_z_labels, parameters.x_dropout)
+        self.zydecoding = Label2LabelDecoder(
+            embedding_dim_size, n_z_labels, n_y_labels, parameters.x_dropout)
+        self.ydecoding = nn.Sequential(
+            nn.Linear(embedding_dim_size, n_y_labels),
+        )
+        self.zdecoding = nn.Sequential(
+            nn.Linear(embedding_dim_size, n_z_labels),
+        )
         if parameters.use_shared_encoder:
             self.pretrained_params = itertools.chain(
                 self.model_y.parameters(),
@@ -116,10 +116,10 @@ class MapperModel(torch.nn.Module):
             )
         self.auxilary_params = itertools.chain(
             self.full_model.parameters(),
-            # self.yzdecoding.parameters(),
-            # self.zydecoding.parameters(),
-            # self.ydecoding.parameters(),
-            # self.zdecoding.parameters(),
+            self.yzdecoding.parameters(),
+            self.zydecoding.parameters(),
+            self.ydecoding.parameters(),
+            self.zdecoding.parameters(),
         )
         self.to(device)
 
