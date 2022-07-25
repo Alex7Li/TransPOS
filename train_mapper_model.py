@@ -136,8 +136,12 @@ def train_epoch(
         total_y += ty
         # correct_z += cz
         # total_z += tz
+    if cur_epoch >= parameters.only_supervised_epochs:
+        print("no label input train accuracy", end=" ")
+    else:
+        print("supervised train accuracy", end=" ")
     print(
-        f"Train accuracy Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
+        f"Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
     )
     print(f"Train losses: {avg_losses}")
 
@@ -304,6 +308,8 @@ def train_model(
         pbar = tqdm(range(0, n_epochs),
             desc="Training epochs",
         )
+    if not os.path.exists("models"):
+        os.mkdir("models")
     torch.save(model.state_dict(), save_path)
     for epoch_index in pbar:
         print(f"Epoch {epoch_index + 1}/{n_epochs}")
