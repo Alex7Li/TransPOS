@@ -44,6 +44,8 @@ class MapperTrainingParameters:
         self.lr=lr
         self.lr_fine_tune=lr_fine_tune
         self.use_shared_encoder=use_shared_encoder
+        if self.alpha == None:
+            assert only_supervised_epochs == 0
 
 
 def compose_loss(
@@ -60,35 +62,31 @@ def compose_loss(
     (If input_label is z, compute the other term, but the
     variable names will assume the first term)
     """
-    # decode_y = model.decode_y if input_label == "y" else model.decode_z
-    # decode_z = model.decode_y if input_label == "y" else model.decode_z
-    # encode_y = model.encode_y  if input_label == "y" else model.encode_z
-    # supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
-    # supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
+    decode_z = model.decode_y if input_label == "y" else model.decode_z
+    encode_y = model.encode_y  if input_label == "y" else model.encode_z
+    supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
+    supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
 
     batch = {k: v.to(parameters.device) for k, v in batch.items()}
     labels = batch['labels']
-    # e_y = encode_y(batch)
-    # z_tilde = supervisor_z(e_y)
-    # y_tilde = decode_z(e_y, z_tilde)
-    # y_pred_probs = F.softmax(y_tilde, dim=2)
-    # loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
-    # losses = {}
-    # if epoch_ind >= parameters.only_supervised_epochs:
-    #     losses["full CE"] = loss_f(y_pred_probs.flatten(0, 1), labels.flatten())
-        # y_pred = torch.argmax(y_pred_probs, dim=2)
-        # correct = torch.sum(y_pred == labels)
-        # total = torch.sum(labels != -100)
-    if parameters.alpha is not None:
-    #     # supervisor should be accurate
-    #     super_y_logits = supervisor_y(e_y)
-    #     super_probs = F.softmax(super_y_logits, dim=2)
-    #     losses["supervised CE"] = (
-    #         loss_f(super_probs.flatten(0, 1), labels.flatten()) * parameters.alpha
-    #     )
-        losses = {}
-        y_tilde, losses['supervised CE'] = model.forward_y(batch)
+    e_y = encode_y(batch)
+    losses = {}
+    loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
+    if epoch_ind >= parameters.only_supervised_epochs:
+        z_tilde = supervisor_z(e_y)
+        y_tilde = decode_z(e_y, z_tilde)
+        losses["full CE"] = loss_f(y_tilde.flatten(0, 1), labels.flatten())
         y_pred = torch.argmax(y_tilde, dim=2)
+        correct = torch.sum(y_pred == labels)
+        total = torch.sum(labels != -100)
+    if parameters.alpha is not None:
+        losses = {}
+        super_y_logits = supervisor_y(e_y)
+        ce_loss = (
+            loss_f(super_y_logits.flatten(0, 1), labels.flatten()) * parameters.alpha
+        )
+        losses["supervised CE"] = ce_loss
+        y_pred = torch.argmax(super_y_logits, dim=2)
         correct = torch.sum(y_pred == labels)
         total = torch.sum(labels != -100)
     return losses, correct, total
@@ -115,11 +113,11 @@ def train_epoch(
     # Iterate until either dataset is exhausted.
     for batch_y, batch_z in pbar:
         batch_loss_y, cy, ty = compose_loss(batch_y, model, parameters, "y", cur_epoch)
-        # batch_loss_z, cz, tz = compose_loss(batch_z, model, parameters, "z", cur_epoch)
+        batch_loss_z, cz, tz = compose_loss(batch_z, model, parameters, "z", cur_epoch)
         losses = batch_loss_y
         total_loss = torch.tensor(0.0).to(parameters.device)
-        # for k, v in batch_loss_z.items():
-        #     losses[k] += v
+        for k, v in batch_loss_z.items():
+            losses[k] += v
         for k, batch_loss in losses.items():
             total_loss += batch_loss
             if k in avg_losses:
@@ -134,8 +132,8 @@ def train_epoch(
 
         correct_y += cy
         total_y += ty
-        # correct_z += cz
-        # total_z += tz
+        correct_z += cz
+        total_z += tz
     if cur_epoch >= parameters.only_supervised_epochs:
         print("no label input train accuracy", end=" ")
     else:
@@ -143,7 +141,7 @@ def train_epoch(
     print(
         f"Y: {100 * correct_y / total_y:.3f}% Z: {100 * correct_z / total_z:.3f}%"
     )
-    print(f"Train losses: {avg_losses}")
+    print(f"Train losses: {avg_losses.items()}")
 
 
 def get_validation_predictions(
@@ -176,29 +174,23 @@ def get_validation_predictions(
     for y_batch, z_batch in pbar:
         y_true =  y_batch['labels']
         z_true =  z_batch['labels']
-        # e_y = model.encode_y(y_batch)
-        # if parameters.use_shared_encoder:
-        #     e_z = e_y
-        # else:
-        #     e_z = model.encode_z(z_batch)
+        e_y = model.encode_y(y_batch)
+        if parameters.use_shared_encoder:
+            e_z = e_y
+        else:
+            e_z = model.encode_z(z_batch)
         if inference_type == "ours":
-            pass
-            # z_pred = torch.argmax(model.decode_z(e_z, y_true), dim=2)
-            # y_pred = torch.argmax(model.decode_y(e_y, z_true), dim=2)
+            z_pred = torch.argmax(model.decode_z(e_z, y_true), dim=2)
+            y_pred = torch.argmax(model.decode_y(e_y, z_true), dim=2)
         elif inference_type == "x baseline":
-            # y_pred = torch.argmax(model.ydecoding(e_y), dim=2)
-            # z_pred = torch.argmax(model.zdecoding(e_z), dim=2)
-            y_pred = torch.argmax(model.forward_y(y_batch)[0], dim=2)
-            z_pred = y_pred
-            # z_pred = torch.argmax(model.zdecoding(e_z), dim=2)
+            y_pred = torch.argmax(model.ydecoding(e_y), dim=2)
+            z_pred = torch.argmax(model.zdecoding(e_z), dim=2)
         elif inference_type == "no_label_input":
-            pass
-            # y_pred = torch.argmax(model.decode_y(e_y, model.zdecoding(e_z)), dim=2)
-            # z_pred = torch.argmax(model.decode_z(e_z, model.ydecoding(e_y)), dim=2)
+            y_pred = torch.argmax(model.decode_y(e_y, model.zdecoding(e_z)), dim=2)
+            z_pred = torch.argmax(model.decode_z(e_z, model.ydecoding(e_y)), dim=2)
         elif inference_type == "independent":
-            pass
-            # y_pred = torch.argmax(model.ydecoding(e_y) + model.decode_y(e_y, z_true), dim=2)
-            # z_pred = torch.argmax(model.zdecoding(e_z) + model.decode_z(e_z, y_true), dim=2)
+            y_pred = torch.argmax(model.ydecoding(e_y) + model.decode_y(e_y, z_true), dim=2)
+            z_pred = torch.argmax(model.zdecoding(e_z) + model.decode_z(e_z, y_true), dim=2)
         else:
             raise NotImplementedError()
         labels_y.append(y_true)
@@ -373,5 +365,4 @@ def main(
 
 
 if __name__ == "__main__":
-    # main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)
     main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)

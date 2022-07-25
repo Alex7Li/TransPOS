@@ -1,4 +1,3 @@
-from dataclasses import replace
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
@@ -84,7 +83,6 @@ class MapperModel(torch.nn.Module):
         self.base_transformer_name = base_transformer_name
         self.n_y_labels = n_y_labels
         self.n_z_labels = n_z_labels
-        self.full_model = load_model(base_transformer_name, n_y_labels)
         self.model_y = AutoModel.from_pretrained(base_transformer_name)
         if parameters.use_shared_encoder:
             self.model_z = self.model_y
@@ -115,7 +113,6 @@ class MapperModel(torch.nn.Module):
                 self.model_z.parameters(),
             )
         self.auxilary_params = itertools.chain(
-            self.full_model.parameters(),
             self.yzdecoding.parameters(),
             self.zydecoding.parameters(),
             self.ydecoding.parameters(),
@@ -167,10 +164,3 @@ class MapperModel(torch.nn.Module):
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
         return self.zydecoding(e_y, z)
-
-    def forward_y(self, batch):
-        batch["input_ids"] = batch["input_ids"].to(device)
-        batch["attention_mask"] = batch["attention_mask"].to(device)
-        batch["labels"] = batch["labels"].to(device)
-        result = self.full_model(**batch)
-        return result.logits, result.loss
