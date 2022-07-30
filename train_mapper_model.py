@@ -28,8 +28,9 @@ class MapperTrainingParameters:
         batch_size=16,
         tqdm=False,
         x_dropout=.1,
-        lr=6e-5,
-        lr_fine_tune=6e-5,
+        lr=3e-4,
+        lr_fine_tune=3e-5,
+        lr_warmup_epochs=0,
         use_shared_encoder=True
     ) -> None:
         super()
@@ -44,6 +45,7 @@ class MapperTrainingParameters:
         self.lr=lr
         self.lr_fine_tune=lr_fine_tune
         self.use_shared_encoder=use_shared_encoder
+        self.lr_warmup_epochs=lr_warmup_epochs
         if self.alpha == None:
             assert only_supervised_epochs == 0
 
@@ -276,27 +278,25 @@ def train_model(
         logmid = loglow * (1 - dist) + loghi * dist
         return np.exp(logmid)
 
-    def linear_2_phase(end_ratio, epoch):
-        phase_1_epochs = parameters.only_supervised_epochs
-        phase_2_epochs = parameters.total_epochs - parameters.only_supervised_epochs
-        if epoch <= phase_1_epochs:
-            return 1
-        else:
-            return interpolate_geometric(1, end_ratio, (epoch - phase_1_epochs) / max(1, phase_2_epochs))
+    def linear(epoch):
+        return epoch / parameters.total_epochs
 
+    def linear_2_phase(end_ratio, epoch):
+        phase_1_epochs = parameters.lr_warmup_epochs
+        phase_2_epochs = parameters.total_epochs - parameters.lr_warmup_epochs
+        base_value = linear(epoch)
+        if epoch <= phase_1_epochs:
+            return base_value
+        else:
+            return base_value * interpolate_geometric(1, end_ratio, (epoch - phase_1_epochs) / max(1, phase_2_epochs))
+        
     scheduler = LambdaLR(
         optimizer,
         lr_lambda=[
-            lambda _:1,
+            lambda epoch:linear(epoch),
             partial(linear_2_phase, parameters.lr_fine_tune / parameters.lr)
         ]
     )
-    # scheduler = get_scheduler(
-    #     name="linear",
-    #     optimizer=optimizer,
-    #     num_warmup_steps=0,
-    #     num_training_steps=min(len(y_dataloader), len(z_dataloader)) * n_epochs,
-    # )
     best_validation_acc = 0
     valid_acc = 0
     pbar = range(0, n_epochs)
@@ -374,4 +374,5 @@ def main(
 
 
 if __name__ == "__main__":
-    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False)
+    main("tweebank", "ark", "vinai/bertweet-large", load_cached_weights=False,
+         parameters=MapperTrainingParameters(tqdm=True))
