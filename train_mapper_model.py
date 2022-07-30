@@ -206,28 +206,26 @@ def model_validation_acc(
     shared_val_dataset,
     cur_epoch: int,
     parameters: MapperTrainingParameters,
+    do_others: bool
 ) -> Tuple[float, float]:
     model.eval()
-    if cur_epoch % 3 == 0 and cur_epoch > parameters.only_supervised_epochs:  # do all losses
-        val_types = ["x baseline", "no_label_input", "ours"]
-        for val_type in val_types:
-            (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
-                model, shared_val_dataset, val_type, parameters
-            )
-            y_acc = dataloading_utils.get_acc(y_preds, y_labels)
-            z_acc = dataloading_utils.get_acc(z_preds, z_labels)
-            print(f"Val Type {val_type} y_acc: {100*y_acc:.2f}% z_acc: {100*z_acc:.2f}%")
-    else:
-        if cur_epoch < parameters.only_supervised_epochs:
-            val_type = "x baseline"
+    if cur_epoch < parameters.only_supervised_epochs:
+        if do_others:
+            val_types = ["no_label_input", "ours"]
         else:
-            val_type = "ours"
+            val_types = ["x baseline"]
+    else:
+        if do_others:
+            val_types = ["no_label_input", "x baseline"]
+        else:
+            val_types = ["ours"]
+    for val_type in val_types:
         (y_preds, y_labels), (z_preds, z_labels) = get_validation_predictions(
             model, shared_val_dataset, val_type, parameters
         )
         y_acc = dataloading_utils.get_acc(y_preds, y_labels)
         z_acc = dataloading_utils.get_acc(z_preds, z_labels)
-        print(f"Val Type {val_type} acc on twee: {100*y_acc:.2f}% acc on ark: {100*z_acc:.2f}%")
+        print(f"Val Type {val_type} y_acc: {100*y_acc:.2f}% z_acc: {100*z_acc:.2f}%")
     return y_acc, z_acc
 
 
@@ -250,7 +248,14 @@ def train_model(
         [
             {
                 "params": itertools.chain(
-                    model.parameters()
+                    model.auxilary_params,
+                ),
+                "lr": parameters.lr,
+                "weight_decay": 1e-4,
+            },
+            {
+                "params": itertools.chain(
+                    model.pretrained_params,
                 ),
                 "lr": parameters.lr_fine_tune,
                 "weight_decay": 1e-4,
@@ -309,9 +314,14 @@ def train_model(
         )
         if shared_val_dataset is not None:
             valid_acc_y, valid_acc_z = model_validation_acc(
-                model, shared_val_dataset, epoch_index, parameters
+                model, shared_val_dataset, epoch_index, parameters, do_others=False
             )
-            valid_acc = valid_acc_y #math.sqrt(valid_acc_y * valid_acc_z)  # Geometric Mean
+            valid_acc = math.sqrt(valid_acc_y * valid_acc_z)  # Geometric Mean
+            if valid_acc > best_validation_acc:
+                # Find the other statistics for this interesting model
+                model_validation_acc(
+                    model, shared_val_dataset, epoch_index, parameters, do_others=True
+                )
         if valid_acc < 0.2:
             print(f"Model collapsed, restarting from best epoch.")
             model.load_state_dict(torch.load(save_path))
