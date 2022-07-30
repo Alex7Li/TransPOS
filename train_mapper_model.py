@@ -227,7 +227,7 @@ def model_validation_acc(
         )
         y_acc = dataloading_utils.get_acc(y_preds, y_labels)
         z_acc = dataloading_utils.get_acc(z_preds, z_labels)
-        print(f"Val Type {val_type} y_acc: {100*y_acc:.2f}% z_acc: {100*z_acc:.2f}%")
+        print(f"Val Type {val_type} acc on twee: {100*y_acc:.2f}% acc on ark: {100*z_acc:.2f}%")
     return y_acc, z_acc
 
 
@@ -258,40 +258,40 @@ def train_model(
         ]
     )
 
-    # def interpolate_geometric(low:float, high:float, dist:float):
-    #     """
-    #     Find a the point dist/100 percent of the way from low to high
-    #     on a log scale.
+    def interpolate_geometric(low:float, high:float, dist:float):
+        """
+        Find a the point dist/100 percent of the way from low to high
+        on a log scale.
         
-    #     Dist is a parameter between
-    #     0 and 1 indicating how close to low/high it should be.
-    #     """
-    #     loghi = np.log(high)
-    #     loglow = np.log(low)
-    #     logmid = loglow * (1 - dist) + loghi * dist
-    #     return np.exp(logmid)
+        Dist is a parameter between
+        0 and 1 indicating how close to low/high it should be.
+        """
+        loghi = np.log(high)
+        loglow = np.log(low)
+        logmid = loglow * (1 - dist) + loghi * dist
+        return np.exp(logmid)
 
-    # def linear_2_phase(end_ratio, epoch):
-    #     phase_1_epochs = parameters.only_supervised_epochs
-    #     phase_2_epochs = parameters.total_epochs - parameters.only_supervised_epochs
-    #     if epoch <= phase_1_epochs:
-    #         return 1
-    #     else:
-    #         return interpolate_geometric(1, end_ratio, (epoch - phase_1_epochs) / max(1, phase_2_epochs))
+    def linear_2_phase(end_ratio, epoch):
+        phase_1_epochs = parameters.only_supervised_epochs
+        phase_2_epochs = parameters.total_epochs - parameters.only_supervised_epochs
+        if epoch <= phase_1_epochs:
+            return 1
+        else:
+            return interpolate_geometric(1, end_ratio, (epoch - phase_1_epochs) / max(1, phase_2_epochs))
 
-    # scheduler = LambdaLR(
-    #     optimizer,
-    #     lr_lambda=[
-    #         lambda _:1,
-    #         partial(linear_2_phase, parameters.lr_fine_tune / parameters.lr)
-    #     ]
-    # )
-    scheduler = get_scheduler(
-        name="linear",
-        optimizer=optimizer,
-        num_warmup_steps=0,
-        num_training_steps=min(len(y_dataloader), len(z_dataloader)) * n_epochs,
+    scheduler = LambdaLR(
+        optimizer,
+        lr_lambda=[
+            lambda _:1,
+            partial(linear_2_phase, parameters.lr_fine_tune / parameters.lr)
+        ]
     )
+    # scheduler = get_scheduler(
+    #     name="linear",
+    #     optimizer=optimizer,
+    #     num_warmup_steps=0,
+    #     num_training_steps=min(len(y_dataloader), len(z_dataloader)) * n_epochs,
+    # )
     best_validation_acc = 0
     valid_acc = 0
     pbar = range(0, n_epochs)
