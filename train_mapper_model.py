@@ -317,11 +317,11 @@ def train_model(
                 model, shared_val_dataset, epoch_index, parameters, do_others=False
             )
             valid_acc = math.sqrt(valid_acc_y * valid_acc_z)  # Geometric Mean
-            if valid_acc > best_validation_acc:
+            # if valid_acc > best_validation_acc:
                 # Find the other statistics for this interesting model
-                model_validation_acc(
-                    model, shared_val_dataset, epoch_index, parameters, do_others=True
-                )
+            model_validation_acc(
+                model, shared_val_dataset, epoch_index, parameters, do_others=True
+            )
         if valid_acc < 0.2:
             print(f"Model collapsed, restarting from best epoch.")
             model.load_state_dict(torch.load(save_path))
