@@ -1,5 +1,5 @@
 # SemiTPOT
-(Semi-Supervised Twitter PoS Tagging)[https://www.overleaf.com/read/sxbvyhpvhgvk]
+[Semi-Supervised Twitter PoS Tagging](https://www.overleaf.com/read/sxbvyhpvhgvk)
 
 ## Repository Description
 This repository contains several datasets that can be used for semi-supervised learning. Ark, TPANN and TweeBank are Twitter datasets while the others contain data from other domains. Additionally, it contains several files that can be used to train and evaluate model performances on different datasets. Many of the files are not relevant for the paper, since we did lots of exploration before arriving at the hypothesis we wanted to test.
