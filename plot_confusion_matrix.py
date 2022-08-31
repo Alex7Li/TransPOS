@@ -1,6 +1,6 @@
 import numpy as np
 import os
-import pickle
+import sys
 from ArkDataset.load_ark import ARK_POS_TAGS
 from augmented_datasets import TWEEBANK_POS_MAPPING
 from training import dataset_names
@@ -63,9 +63,11 @@ def shared_confusion(path):
         df,
         annot=True,
         fmt="d",
+        robust=True
     )
+    plt.gcf().set_size_inches(10, 7)
     heatmap.set_title("Validation set label distribution")
-    heatmap.set_xlabel("Akk Label")
+    heatmap.set_xlabel("Ark Label")
     heatmap.set_ylabel("Tweebank Label")
     plt.subplots_adjust(hspace=0.375)
     plt.savefig(path)
