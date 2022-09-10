@@ -31,7 +31,7 @@ class MapperTrainingParameters:
         lr=3e-4,
         lr_fine_tune=3e-5,
         lr_warmup_epochs=0,
-        use_frustratingly_easy_encoder=True
+        use_separate_encoder=False
     ) -> None:
         super()
         self.alpha = alpha
@@ -44,8 +44,10 @@ class MapperTrainingParameters:
         self.x_dropout=x_dropout
         self.lr=lr
         self.lr_fine_tune=lr_fine_tune
+        # Separate encoder with some shared weights 
         # https://arxiv.org/abs/0907.1815
-        self.use_frustratingly_easy_encoder=use_frustratingly_easy_encoder
+        # Very slow since you need to recompute encoder twice.
+        self.use_separate_encoder=use_separate_encoder
         self.lr_warmup_epochs=lr_warmup_epochs
         if self.alpha == None:
             assert only_supervised_epochs == 0
@@ -77,7 +79,7 @@ def compose_loss(
     losses = {}
     loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
     if epoch_ind >= parameters.only_supervised_epochs:
-        if parameters.use_frustratingly_easy_encoder:
+        if parameters.use_separate_encoder:
             e_z = encode_z(batch)
             z_tilde = supervisor_z(e_z)
             y_tilde = decode_y(e_z, z_tilde)

@@ -84,13 +84,13 @@ class MapperModel(torch.nn.Module):
         self.n_y_labels = n_y_labels
         self.n_z_labels = n_z_labels
         self.model = AutoModel.from_pretrained(base_transformer_name)
-        self.separate_domain = parameters.use_frustratingly_easy_encoder
+        self.separate_encoder = parameters.use_separate_encoder
         embedding_dim_size = 1024
         if base_transformer_name == "vinai/bertweet-large":
             embedding_dim_size = 1024
         elif base_transformer_name == "gpt2":
             embedding_dim_size = 768
-        if self.separate_domain:
+        if self.separate_encoder:
             embedding_dim_size *= 3
         self.yzdecoding = Label2LabelDecoder(
             embedding_dim_size, n_y_labels, n_z_labels, parameters.x_dropout)
@@ -138,14 +138,14 @@ class MapperModel(torch.nn.Module):
 
     def encode_y(self, batch) -> torch.Tensor:
         x_y = self.encode(batch)
-        if self.separate_domain:
+        if self.separate_encoder:
             return torch.cat([x_y, x_y, torch.zeros_like(x_y)], dim=2)
         else:
             return x_y
 
     def encode_z(self, batch) -> torch.Tensor:
         x_z = self.encode(batch)
-        if self.separate_domain:
+        if self.separate_encoder:
             return torch.cat([x_z, torch.zeros_like(x_z), x_z], dim=2)
         else:
             return x_z
