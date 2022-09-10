@@ -31,7 +31,7 @@ class MapperTrainingParameters:
         lr=3e-4,
         lr_fine_tune=3e-5,
         lr_warmup_epochs=0,
-        use_shared_encoder=True
+        use_frustratingly_easy_encoder=True
     ) -> None:
         super()
         self.alpha = alpha
@@ -44,7 +44,8 @@ class MapperTrainingParameters:
         self.x_dropout=x_dropout
         self.lr=lr
         self.lr_fine_tune=lr_fine_tune
-        self.use_shared_encoder=use_shared_encoder
+        # https://arxiv.org/abs/0907.1815
+        self.use_frustratingly_easy_encoder=use_frustratingly_easy_encoder
         self.lr_warmup_epochs=lr_warmup_epochs
         if self.alpha == None:
             assert only_supervised_epochs == 0
@@ -176,10 +177,7 @@ def get_validation_predictions(
         y_true =  y_batch['labels']
         z_true =  z_batch['labels']
         e_y = model.encode_y(y_batch)
-        if parameters.use_shared_encoder:
-            e_z = e_y
-        else:
-            e_z = model.encode_z(z_batch)
+        e_z = model.encode_z(z_batch)
         if inference_type == "ours":
             z_pred = torch.argmax(model.decode_z(e_z, y_true), dim=2)
             y_pred = torch.argmax(model.decode_y(e_y, z_true), dim=2)

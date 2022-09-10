@@ -83,16 +83,15 @@ class MapperModel(torch.nn.Module):
         self.base_transformer_name = base_transformer_name
         self.n_y_labels = n_y_labels
         self.n_z_labels = n_z_labels
-        self.model_y = AutoModel.from_pretrained(base_transformer_name)
-        if parameters.use_shared_encoder:
-            self.model_z = self.model_y
-        else:
-            self.model_z = AutoModel.from_pretrained(base_transformer_name)
+        self.model = AutoModel.from_pretrained(base_transformer_name)
+        self.separate_domain = parameters.use_frustratingly_easy_encoder
         embedding_dim_size = 1024
         if base_transformer_name == "vinai/bertweet-large":
             embedding_dim_size = 1024
         elif base_transformer_name == "gpt2":
             embedding_dim_size = 768
+        if self.separate_domain:
+            embedding_dim_size *= 3
         self.yzdecoding = Label2LabelDecoder(
             embedding_dim_size, n_y_labels, n_z_labels, parameters.x_dropout)
         self.zydecoding = Label2LabelDecoder(
@@ -103,15 +102,9 @@ class MapperModel(torch.nn.Module):
         self.zdecoding = nn.Sequential(
             nn.Linear(embedding_dim_size, n_z_labels),
         )
-        if parameters.use_shared_encoder:
-            self.pretrained_params = itertools.chain(
-                self.model_y.parameters(),
-            )
-        else:
-            self.pretrained_params = itertools.chain(
-                self.model_y.parameters(),
-                self.model_z.parameters(),
-            )
+        self.pretrained_params = itertools.chain(
+            self.model.parameters(),
+        )
         self.auxilary_params = itertools.chain(
             self.yzdecoding.parameters(),
             self.zydecoding.parameters(),
@@ -120,7 +113,7 @@ class MapperModel(torch.nn.Module):
         )
         self.to(device)
 
-    def encode(self, batch: dict, output_type='y') -> torch.Tensor:
+    def encode(self, batch: dict) -> torch.Tensor:
         """
         Use a transformer to encode x into an embedding dimension E.
 
@@ -128,7 +121,7 @@ class MapperModel(torch.nn.Module):
         Embeddings of shape
         [batch_size, sentence_length, embedding_dim_size]
         """
-        model = self.model_y if output_type == 'y' else self.model_z
+        model = self.model
         batch["input_ids"] = batch["input_ids"].to(device)
         batch["attention_mask"] = batch["attention_mask"].to(device)
         if "labels" in batch:
@@ -144,10 +137,18 @@ class MapperModel(torch.nn.Module):
         return result[0]
 
     def encode_y(self, batch) -> torch.Tensor:
-        return self.encode(batch, 'y')
+        x_y = self.encode(batch)
+        if self.separate_domain:
+            return torch.cat([x_y, x_y, torch.zeros_like(x_y)], dim=2)
+        else:
+            return x_y
 
     def encode_z(self, batch) -> torch.Tensor:
-        return self.encode(batch, 'z')
+        x_z = self.encode(batch)
+        if self.separate_domain:
+            return torch.cat([x_z, torch.zeros_like(x_z), x_z], dim=2)
+        else:
+            return x_z
 
     def decode_z(self, e_z: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
