@@ -185,7 +185,10 @@ def get_validation_predictions(
         y_true =  y_batch['labels']
         z_true =  z_batch['labels']
         e_y = model.encode_y(y_batch)
-        e_z = model.encode_z(z_batch)
+        if parameters.use_separate_encoder:
+            e_z = model.encode_z(z_batch)
+        else:
+            e_z = e_y # Don't re-run the encoder, will be slow
         if inference_type == "ours":
             z_pred = torch.argmax(model.decode_z(e_z, y_true), dim=2)
             y_pred = torch.argmax(model.decode_y(e_y, z_true), dim=2)
