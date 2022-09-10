@@ -31,7 +31,7 @@ class MapperTrainingParameters:
         lr=3e-4,
         lr_fine_tune=3e-5,
         lr_warmup_epochs=0,
-        use_shared_encoder=True
+        use_separate_encoder=False
     ) -> None:
         super()
         self.alpha = alpha
@@ -44,7 +44,10 @@ class MapperTrainingParameters:
         self.x_dropout=x_dropout
         self.lr=lr
         self.lr_fine_tune=lr_fine_tune
-        self.use_shared_encoder=use_shared_encoder
+        # Separate encoder with some shared weights 
+        # https://arxiv.org/abs/0907.1815
+        # Very slow since you need to recompute encoder twice.
+        self.use_separate_encoder=use_separate_encoder
         self.lr_warmup_epochs=lr_warmup_epochs
         if self.alpha == None:
             assert only_supervised_epochs == 0
@@ -64,8 +67,9 @@ def compose_loss(
     (If input_label is z, compute the other term, but the
     variable names will assume the first term)
     """
-    decode_z = model.decode_y if input_label == "y" else model.decode_z
+    decode_y = model.decode_y if input_label == "y" else model.decode_z
     encode_y = model.encode_y  if input_label == "y" else model.encode_z
+    encode_z = model.encode_z  if input_label == "y" else model.encode_y
     supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
     supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
 
@@ -75,8 +79,13 @@ def compose_loss(
     losses = {}
     loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
     if epoch_ind >= parameters.only_supervised_epochs:
-        z_tilde = supervisor_z(e_y)
-        y_tilde = decode_z(e_y, z_tilde)
+        if parameters.use_separate_encoder:
+            e_z = encode_z(batch)
+            z_tilde = supervisor_z(e_z)
+            y_tilde = decode_y(e_z, z_tilde)
+        else:
+            z_tilde = supervisor_z(e_y)
+            y_tilde = decode_y(e_y, z_tilde)
         losses["full CE"] = loss_f(y_tilde.flatten(0, 1), labels.flatten())
         y_pred = torch.argmax(y_tilde, dim=2)
         correct = torch.sum(y_pred == labels)
@@ -176,10 +185,10 @@ def get_validation_predictions(
         y_true =  y_batch['labels']
         z_true =  z_batch['labels']
         e_y = model.encode_y(y_batch)
-        if parameters.use_shared_encoder:
-            e_z = e_y
-        else:
+        if parameters.use_separate_encoder:
             e_z = model.encode_z(z_batch)
+        else:
+            e_z = e_y # Don't re-run the encoder, will be slow
         if inference_type == "ours":
             z_pred = torch.argmax(model.decode_z(e_z, y_true), dim=2)
             y_pred = torch.argmax(model.decode_y(e_y, z_true), dim=2)

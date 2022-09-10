@@ -4,8 +4,7 @@
 ## Repository Description
 This repository contains several datasets that can be used for semi-supervised learning. Ark, TPANN and TweeBank are Twitter datasets while the others contain data from other domains. Additionally, it contains several files that can be used to train and evaluate model performances on different datasets. Many of the files are not relevant for the paper, since we did lots of exploration before arriving at the hypothesis we wanted to test.
 
-#### training.py
-This file can be used to run an experiment where at each iteration, a model is trained on a particular dataset then evaluated on all datasets. The experiment will run all possible combinations (i.e. iterate through all models, and for each model, iterate through the datasets and train the model on each one) and save the results to a pickle file that can be used for visualization.
+The files containing logic relevant to the paper are train_mapper_model.py and mapper_model.py
 
 #### train_mapper_model.py
 Training for the mapper model. The parameters for the paper were
@@ -25,6 +24,9 @@ parameters = SemiTPOT.train_mapper_model.MapperTrainingParameters(
 #### mapper_model.py
 This is where the architecture model described in the paper is stored.
 
+#### training.py
+This file can be used to run an experiment where at each iteration, a model is trained on a particular dataset then evaluated on all datasets. The experiment will run all possible combinations (i.e. iterate through all models, and for each model, iterate through the datasets and train the model on each one) and save the results to a pickle file that can be used for visualization.
+
 #### train_baselines.py
 Training for a baseline model. For the paper we actually just used train_mapper_model with x_dropout=0.0, but this gives similar results.
 
@@ -43,7 +45,7 @@ This file trains a teacher model in a labelled dataset. It is then used to creat
 
 ## Setup
 
-Install the dependencies
+### Install the dependencies
 You can try
 
 ```bash
@@ -61,9 +63,11 @@ pip3 install -U kaleido
 
 (You can't install it all in one command or it'll crash for some reason)
 
-3) Run the code
+### Run the code
 
+```bash
 python -m mapper_model.py
+```
 
 ## References
 To view the list of references on where we obtained the datasets, models and semi-supervised learning technique, please view the references section in the report.
