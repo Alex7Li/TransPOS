@@ -65,8 +65,9 @@ def compose_loss(
     (If input_label is z, compute the other term, but the
     variable names will assume the first term)
     """
-    decode_z = model.decode_y if input_label == "y" else model.decode_z
+    decode_y = model.decode_y if input_label == "y" else model.decode_z
     encode_y = model.encode_y  if input_label == "y" else model.encode_z
+    encode_z = model.encode_z  if input_label == "y" else model.encode_y
     supervisor_y = model.ydecoding if input_label == "y" else model.zdecoding
     supervisor_z = model.zdecoding if input_label == "y" else model.ydecoding
 
@@ -76,8 +77,13 @@ def compose_loss(
     losses = {}
     loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
     if epoch_ind >= parameters.only_supervised_epochs:
-        z_tilde = supervisor_z(e_y)
-        y_tilde = decode_z(e_y, z_tilde)
+        if parameters.use_frustratingly_easy_encoder:
+            e_z = encode_z(batch)
+            z_tilde = supervisor_z(e_z)
+            y_tilde = decode_y(e_z, z_tilde)
+        else:
+            z_tilde = supervisor_z(e_y)
+            y_tilde = decode_y(e_y, z_tilde)
         losses["full CE"] = loss_f(y_tilde.flatten(0, 1), labels.flatten())
         y_pred = torch.argmax(y_tilde, dim=2)
         correct = torch.sum(y_pred == labels)

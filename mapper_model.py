@@ -150,18 +150,20 @@ class MapperModel(torch.nn.Module):
         else:
             return x_z
 
-    def decode_z(self, e_z: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def decode_z(self, e: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
         Combine an embedding with a Y label to predict a Z label.
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         y: batch of integer label or estimated vector softmax estimate of Y of size n_y_labels.
+        
+        At test time, e is going to be from the Z dataset.
         """
-        return self.yzdecoding(e_z, y)
+        return self.yzdecoding(e, y)
 
-    def decode_y(self, e_y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+    def decode_y(self, e: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
         """
         Combine an embedding with a Z label to predict a Y label.
         e: embedding of shape [batch_size, sentence_length, embedding_dim_size]
         z: batch of integer label or estimated vector softmax estimate of Z of size n_z_labels.
         """
-        return self.zydecoding(e_y, z)
+        return self.zydecoding(e, z)
