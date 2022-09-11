@@ -17,7 +17,8 @@ import os
 from torch.optim.lr_scheduler import LambdaLR
 from typing import Tuple, Optional
 from EncoderDecoderDataloaders import create_tweebank_ark_dataset
-from transformers import get_scheduler
+
+from mapper_helper import softToHardLabel
 
 class MapperTrainingParameters:
     def __init__(
@@ -77,23 +78,32 @@ def compose_loss(
     labels = batch['labels']
     e_y = encode_y(batch)
     losses = {}
-    loss_f = torch.nn.CrossEntropyLoss(ignore_index=-100)
+    ce_loss = torch.nn.CrossEntropyLoss(ignore_index=-100)
     if epoch_ind >= parameters.only_supervised_epochs:
         if parameters.use_separate_encoder:
             e_z = encode_z(batch)
-            z_tilde = supervisor_z(e_z)
+            z_tilde = softToHardLabel(supervisor_z(e_z))
             y_tilde = decode_y(e_z, z_tilde)
         else:
-            z_tilde = supervisor_z(e_y)
+            z_tilde = softToHardLabel(supervisor_z(e_y))
             y_tilde = decode_y(e_y, z_tilde)
-        losses["full CE"] = loss_f(y_tilde.flatten(0, 1), labels.flatten())
+        losses["full CE"] = ce_loss(y_tilde.flatten(0, 1), labels.flatten())
         y_pred = torch.argmax(y_tilde, dim=2)
         correct = torch.sum(y_pred == labels)
         total = torch.sum(labels != -100)
+
+        z_tilde[labels == -100] = -100 # Make it a bit harder to distinguish the labels
+        if input_label == 'y':
+            p_originally_z = model.p_originally_z(labels, z_tilde)
+        else:
+            p_originally_z = 1 - model.p_originally_z(z_tilde, labels)
+        zero = torch.zeros_like(p_originally_z)
+        losses["Correct BCE"] = F.binary_cross_entropy(p_originally_z, zero + (0 if input_label == 'y' else 1))
+        losses["Incorrect BCE"] = F.binary_cross_entropy(p_originally_z, zero + (1 if input_label == 'y' else 0))
     if parameters.alpha is not None:
         super_y_logits = supervisor_y(e_y)
         ce_loss = (
-            loss_f(super_y_logits.flatten(0, 1), labels.flatten()) * parameters.alpha
+            ce_loss(super_y_logits.flatten(0, 1), labels.flatten()) * parameters.alpha
         )
         losses["supervised CE"] = ce_loss
         y_pred = torch.argmax(super_y_logits, dim=2)
@@ -129,16 +139,30 @@ def train_epoch(
         for k, v in batch_loss_z.items():
             losses[k] += v
         for k, batch_loss in losses.items():
-            total_loss += batch_loss
+            # We want our z tilde to look like y
+            if k != 'Incorrect BCE':
+                total_loss += batch_loss
             if k in avg_losses:
-                avg_losses[k] = batch_loss.item()
-            else:
                 avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
+            else:
+                avg_losses[k] = batch_loss.item()
         if parameters.tqdm:
             pbar.set_postfix({k: v for k, v in avg_losses.items()})
-        total_loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+
+        if cur_epoch % 3 != 2:
+            # Update the main model
+            for param in model.parameters():
+                param.requires_grad = param != model.yz_distinguisher
+            total_loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+        else:
+            # Train just the distinguisher
+            for param in model.parameters():
+                param.requires_grad = param == model.yz_distinguisher
+            losses['Incorrect BCE'].backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
         correct_y += cy
         total_y += ty
@@ -196,8 +220,8 @@ def get_validation_predictions(
             y_pred = torch.argmax(model.ydecoding(e_y), dim=2)
             z_pred = torch.argmax(model.zdecoding(e_z), dim=2)
         elif inference_type == "no_label_input":
-            y_pred = torch.argmax(model.decode_y(e_y, model.zdecoding(e_z)), dim=2)
-            z_pred = torch.argmax(model.decode_z(e_z, model.ydecoding(e_y)), dim=2)
+            y_pred = torch.argmax(model.decode_y(e_y, softToHardLabel(model.zdecoding(e_z))), dim=2)
+            z_pred = torch.argmax(model.decode_z(e_z, softToHardLabel(model.ydecoding(e_y))), dim=2)
         elif inference_type == "independent":
             y_pred = torch.argmax(model.ydecoding(e_y) + model.decode_y(e_y, z_true), dim=2)
             z_pred = torch.argmax(model.zdecoding(e_z) + model.decode_z(e_z, y_true), dim=2)
