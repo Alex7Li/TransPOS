@@ -127,6 +127,12 @@ def train_epoch(
     total_y = 0
     total_z = 0.0001
     pbar = zip(y_dataloader, z_dataloader)
+    update_distinguisher = cur_epoch % 3 == 2
+    # Train just the distinguisher
+    for param in model.parameters():
+        param.requires_grad = not update_distinguisher
+    for param in model.yz_distinguisher.parameters():
+        param.requires_grad = update_distinguisher
     if parameters.tqdm:
         n_iters = min(len(y_dataloader), len(z_dataloader))
         pbar = tqdm(pbar, total=n_iters)
@@ -140,29 +146,20 @@ def train_epoch(
             losses[k] += v
         for k, batch_loss in losses.items():
             # We want our z tilde to look like y
-            if k != 'Incorrect BCE':
+            if (k != 'Incorrect BCE') ^ update_distinguisher:
                 total_loss += batch_loss
-            if k in avg_losses:
-                avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
-            else:
-                avg_losses[k] = batch_loss.item()
+                if k in avg_losses:
+                    avg_losses[k] = avg_losses[k] * 0.95 + batch_loss.item() * 0.05
+                else:
+                    avg_losses[k] = batch_loss.item()
         if parameters.tqdm:
             pbar.set_postfix({k: v for k, v in avg_losses.items()})
-
-        if cur_epoch % 3 != 2:
-            # Update the main model
-            for param in model.parameters():
-                param.requires_grad = param != model.yz_distinguisher
-            total_loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-        else:
-            # Train just the distinguisher
-            for param in model.parameters():
-                param.requires_grad = param == model.yz_distinguisher
+        if update_distinguisher:
             losses['Incorrect BCE'].backward()
-            optimizer.step()
-            optimizer.zero_grad()
+        else:
+            total_loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
 
         correct_y += cy
         total_y += ty
