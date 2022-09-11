@@ -127,7 +127,7 @@ def train_epoch(
     total_y = 0
     total_z = 0.0001
     pbar = zip(y_dataloader, z_dataloader)
-    update_distinguisher = cur_epoch == parameters.only_supervised_epochs + 1
+    update_distinguisher = cur_epoch == parameters.only_supervised_epochs + 3
     # Train just the distinguisher
     for param in model.parameters():
         param.requires_grad = not update_distinguisher
